@@ -1,0 +1,15 @@
+{
+  "algorithm-language": "Python",
+  "parameters": {
+    "fast_period": "10",
+    "slow_period": "30",
+    "rsi_period": "14",
+    "volume_period": "20",
+    "rsi_overbought": "70",
+    "rsi_oversold": "30",
+    "stop_loss_pct": "0.03",
+    "take_profit_pct": "0.06"
+  },
+  "description": "SMA Crossover v2 \u0441 RSI, Volume \u0444\u0438\u043b\u044c\u0442\u0440\u0430\u043c\u0438 \u0438 SL/TP",
+  "local-id": 322682085
+}

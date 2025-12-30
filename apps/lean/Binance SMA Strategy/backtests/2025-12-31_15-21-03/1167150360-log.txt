@@ -1,0 +1,7 @@
+Launching analysis for 1167150360 with LEAN Engine v2.5.0.0
+2023-12-30 18:00:00 Algorithm starting warm up...
+2024-01-01 00:00:00 Algorithm finished warming up.
+AlgorithmManager.Run(): Portfolio value is less than or equal to zero, stopping algorithm.
+2024-01-04 13:00:00 When buying currency pairs, using Cash account types, fees in base currency will be deducted from the filled quantity so virtual positions reflect actual holdings.
+2024-01-04 13:00:00 BUY: Price=43676.07, Fast=43161.01, Slow=43108.88, RSI=57.3, Vol=2650/1701, SL=42365.79, TP=46296.63
+Algorithm Id:(1167150360) completed in 0.18 seconds at 1k data points per second. Processing total of 117 data points.

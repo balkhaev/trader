@@ -1,0 +1,368 @@
+{
+  "rollingWindow": {},
+  "totalPerformance": {
+    "tradeStatistics": {
+      "startDateTime": null,
+      "endDateTime": null,
+      "totalNumberOfTrades": 0,
+      "numberOfWinningTrades": 0,
+      "numberOfLosingTrades": 0,
+      "totalProfitLoss": "0",
+      "totalProfit": "0",
+      "totalLoss": "0",
+      "largestProfit": "0",
+      "largestLoss": "0",
+      "averageProfitLoss": "0",
+      "averageProfit": "0",
+      "averageLoss": "0",
+      "averageTradeDuration": "00:00:00",
+      "averageWinningTradeDuration": "00:00:00",
+      "averageLosingTradeDuration": "00:00:00",
+      "medianTradeDuration": "00:00:00",
+      "medianWinningTradeDuration": "00:00:00",
+      "medianLosingTradeDuration": "00:00:00",
+      "maxConsecutiveWinningTrades": 0,
+      "maxConsecutiveLosingTrades": 0,
+      "profitLossRatio": "0",
+      "winLossRatio": "0",
+      "winRate": "0",
+      "lossRate": "0",
+      "averageMAE": "0",
+      "averageMFE": "0",
+      "largestMAE": "0",
+      "largestMFE": "0",
+      "maximumClosedTradeDrawdown": "0",
+      "maximumIntraTradeDrawdown": "0",
+      "profitLossStandardDeviation": "0",
+      "profitLossDownsideDeviation": "0",
+      "profitFactor": "0",
+      "sharpeRatio": "0",
+      "sortinoRatio": "0",
+      "profitToMaxDrawdownRatio": "0",
+      "maximumEndTradeDrawdown": "0",
+      "averageEndTradeDrawdown": "0",
+      "maximumDrawdownDuration": "00:00:00",
+      "totalFees": "0"
+    },
+    "portfolioStatistics": {
+      "averageWinRate": "0",
+      "averageLossRate": "0",
+      "profitLossRatio": "0",
+      "winRate": "0",
+      "lossRate": "0",
+      "expectancy": "0",
+      "startEquity": "0",
+      "endEquity": "0",
+      "compoundingAnnualReturn": "0",
+      "drawdown": "0",
+      "totalNetProfit": "0",
+      "sharpeRatio": "0",
+      "probabilisticSharpeRatio": "0",
+      "sortinoRatio": "0",
+      "alpha": "0",
+      "beta": "0",
+      "annualStandardDeviation": "0",
+      "annualVariance": "0",
+      "informationRatio": "0",
+      "trackingError": "0",
+      "treynorRatio": "0",
+      "portfolioTurnover": "0",
+      "valueAtRisk99": "0",
+      "valueAtRisk95": "0",
+      "drawdownRecovery": "0"
+    },
+    "closedTrades": []
+  },
+  "charts": {
+    "Drawdown": {
+      "name": "Drawdown",
+      "chartType": 0,
+      "series": {
+        "Equity Drawdown": {
+          "name": "Equity Drawdown",
+          "unit": "%",
+          "index": 0,
+          "seriesType": 0,
+          "values": [
+            [1704085200, 0.0],
+            [1704171600, 0.0],
+            [1704258000, 0.0],
+            [1704344400, 0.0],
+            [1704394800, -43758.64]
+          ],
+          "color": "",
+          "scatterMarkerSymbol": "none"
+        }
+      }
+    },
+    "Portfolio Turnover": {
+      "name": "Portfolio Turnover",
+      "chartType": 0,
+      "series": {
+        "Portfolio Turnover": {
+          "name": "Portfolio Turnover",
+          "unit": "%",
+          "index": 0,
+          "seriesType": 0,
+          "values": [
+            [1704171600, 0.0],
+            [1704258000, 0.0],
+            [1704344400, 0.0],
+            [1704394800, -1.003452]
+          ],
+          "color": "",
+          "scatterMarkerSymbol": "none"
+        }
+      }
+    },
+    "Exposure": {
+      "name": "Exposure",
+      "chartType": 0,
+      "series": {
+        "Crypto - Long Ratio": {
+          "name": "Crypto - Long Ratio",
+          "unit": "",
+          "index": 0,
+          "seriesType": 0,
+          "values": [
+            [1704085200, 0.0],
+            [1704171600, 0.0],
+            [1704258000, 0.0],
+            [1704344400, 0.0],
+            [1704394800, -0.0022]
+          ],
+          "color": "",
+          "scatterMarkerSymbol": "none"
+        },
+        "Crypto - Short Ratio": {
+          "name": "Crypto - Short Ratio",
+          "unit": "",
+          "index": 0,
+          "seriesType": 0,
+          "values": [
+            [1704085200, 0.0],
+            [1704171600, 0.0],
+            [1704258000, 0.0],
+            [1704344400, 0.0],
+            [1704394800, 0.0]
+          ],
+          "color": "",
+          "scatterMarkerSymbol": "none"
+        }
+      }
+    },
+    "Strategy Equity": {
+      "name": "Strategy Equity",
+      "chartType": 0,
+      "series": {
+        "Equity": {
+          "name": "Equity",
+          "unit": "$",
+          "index": 0,
+          "seriesType": 2,
+          "values": [
+            [1704085200, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704092400, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704103200, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704114000, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704124800, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704135600, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704146400, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704157200, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704168000, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704171600, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704178800, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704189600, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704200400, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704211200, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704222000, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704232800, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704243600, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704254400, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704258000, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704265200, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704276000, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704286800, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704297600, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704308400, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704319200, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704330000, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704340800, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704344400, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704351600, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704362400, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704373200, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704384000, 10000.0, 10000.0, 10000.0, 10000.0],
+            [1704391200, 10000.0, 10000.0, -4365864.0, -4365864.0],
+            [1704394800, -4365864.0, -4365864.0, -4365864.0, -4365864.0]
+          ]
+        },
+        "Return": {
+          "name": "Return",
+          "unit": "%",
+          "index": 1,
+          "seriesType": 3,
+          "values": [
+            [1704085200, 0.0],
+            [1704171600, 0.0],
+            [1704258000, 0.0],
+            [1704344400, 0.0],
+            [1704394800, -43758.64]
+          ],
+          "color": "",
+          "scatterMarkerSymbol": "none"
+        }
+      }
+    },
+    "Capacity": {
+      "name": "Capacity",
+      "chartType": 0,
+      "series": {
+        "Strategy Capacity": {
+          "name": "Strategy Capacity",
+          "unit": "$",
+          "index": 0,
+          "seriesType": 0,
+          "values": [
+            [1704085200, 0.0],
+            [1704171600, 0.0],
+            [1704258000, 0.0],
+            [1704344400, 0.0],
+            [1704394800, 11573000.0]
+          ],
+          "color": "",
+          "scatterMarkerSymbol": "none"
+        }
+      }
+    },
+    "Assets Sales Volume": {
+      "name": "Assets Sales Volume",
+      "chartType": 0,
+      "series": {
+        "BTCUSDT": {
+          "name": "BTCUSDT",
+          "unit": "$",
+          "index": 0,
+          "seriesType": 7,
+          "values": [[1704394800, 4380936.0934]],
+          "color": "",
+          "scatterMarkerSymbol": "none"
+        }
+      }
+    },
+    "Portfolio Margin": {
+      "name": "Portfolio Margin",
+      "chartType": 0,
+      "series": {
+        "BTCUSDT": {
+          "name": "BTCUSDT",
+          "unit": "%",
+          "index": 0,
+          "seriesType": 3,
+          "indexName": "Margin Used (%)",
+          "tooltip": "{SERIES_NAME}: {VALUE}%",
+          "values": [[1704394800, -0.07221]],
+          "color": "",
+          "scatterMarkerSymbol": "none"
+        }
+      },
+      "legendDisabled": true
+    },
+    "Benchmark": {
+      "name": "Benchmark",
+      "chartType": 0,
+      "series": {
+        "Benchmark": {
+          "name": "Benchmark",
+          "unit": "$",
+          "index": 0,
+          "seriesType": 0,
+          "values": [
+            [1704085200, 0.0],
+            [1704171600, 0.0],
+            [1704258000, 0.0],
+            [1704344400, 0.0],
+            [1704394800, 0.0]
+          ],
+          "color": "",
+          "scatterMarkerSymbol": "none"
+        }
+      }
+    }
+  },
+  "orders": {
+    "1": {
+      "type": 0,
+      "id": 1,
+      "contingentId": 0,
+      "brokerId": ["1"],
+      "symbol": {
+        "value": "BTCUSDT",
+        "id": "BTCUSDT 18N",
+        "permtick": "BTCUSDT"
+      },
+      "price": 20231230.0,
+      "priceCurrency": "USDT",
+      "time": "2024-01-04T18:00:00Z",
+      "createdTime": "2024-01-04T18:00:00Z",
+      "lastFillTime": "2024-01-04T18:00:00Z",
+      "quantity": 0.21676,
+      "status": 3,
+      "tag": "",
+      "properties": {
+        "timeInForce": {}
+      },
+      "securityType": 7,
+      "direction": 0,
+      "value": 4385321.4148,
+      "orderSubmissionData": {
+        "bidPrice": 42066.95,
+        "askPrice": 20231230.0,
+        "lastPrice": 43676.07
+      },
+      "isMarketable": true,
+      "priceAdjustmentMode": 1
+    }
+  },
+  "profitLoss": {},
+  "statistics": {},
+  "runtimeStatistics": {
+    "Equity": "$-4,365,863.66",
+    "Fees": "-$9.47",
+    "Holdings": "$9,457.76",
+    "Net Profit": "$-9.47",
+    "Probabilistic Sharpe Ratio": "0%",
+    "Return": "-43,758.64 %",
+    "Unrealized": "$-4,371,835.89",
+    "Volume": "$4,380,936.09"
+  },
+  "state": {
+    "StartTime": "2025-12-31T12:21:33Z",
+    "EndTime": "2025-12-31T12:21:38Z",
+    "RuntimeError": "",
+    "StackTrace": "",
+    "LogCount": "8",
+    "OrderCount": "1",
+    "InsightCount": "0",
+    "Name": "local",
+    "Hostname": "MacBook-Pro-Mikhail",
+    "Status": "Completed"
+  },
+  "algorithmConfiguration": {
+    "name": "local",
+    "tags": [],
+    "accountCurrency": "USD",
+    "brokerage": 6,
+    "accountType": 0,
+    "parameters": {
+      "start_date": "2023-12-31",
+      "end_date": "2025-12-31",
+      "cash": "10000"
+    },
+    "outOfSampleMaxEndDate": null,
+    "outOfSampleDays": 0,
+    "startDate": "2024-01-01T00:00:00Z",
+    "endDate": "2024-12-01T23:59:59Z",
+    "tradingDaysPerYear": 365
+  }
+}

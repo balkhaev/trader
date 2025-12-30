@@ -1,0 +1,8 @@
+/crypto/binance/hour/btcusdt_quote.zip
+/crypto/binance/hour/btcusdt_quote.zip
+/crypto/binance/daily/btcusdt_quote.zip
+/crypto/binance/daily/btcusdt_trade.zip
+/crypto/binance/hour/btcusdt_quote.zip
+/crypto/binance/hour/btcusdt_quote.zip
+/crypto/binance/hour/btcusdc_trade.zip
+/crypto/binance/hour/btcusdc_trade.zip

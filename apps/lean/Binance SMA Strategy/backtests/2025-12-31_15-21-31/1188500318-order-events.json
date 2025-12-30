@@ -1,0 +1,39 @@
+[
+  {
+    "id": "1188500318-1-1",
+    "algorithmId": "1188500318",
+    "orderId": 1,
+    "orderEventId": 1,
+    "symbol": "BTCUSDT 18N",
+    "symbolValue": "BTCUSDT",
+    "symbolPermtick": "BTCUSDT",
+    "time": 1704391200.0,
+    "status": "submitted",
+    "fillPrice": 0.0,
+    "fillPriceCurrency": "USDT",
+    "fillQuantity": 0.0,
+    "direction": "buy",
+    "isAssignment": false,
+    "quantity": 0.21676
+  },
+  {
+    "id": "1188500318-1-2",
+    "algorithmId": "1188500318",
+    "orderId": 1,
+    "orderEventId": 2,
+    "symbol": "BTCUSDT 18N",
+    "symbolValue": "BTCUSDT",
+    "symbolPermtick": "BTCUSDT",
+    "time": 1704391200.0,
+    "status": "filled",
+    "orderFeeAmount": 0.00021676,
+    "orderFeeCurrency": "BTC",
+    "fillPrice": 20231230.0,
+    "fillPriceCurrency": "USDT",
+    "fillQuantity": 0.21654324,
+    "direction": "buy",
+    "message": "Warning: fill at stale price (12/30/2023 00:00:00 UTC)",
+    "isAssignment": false,
+    "quantity": 0.21676
+  }
+]

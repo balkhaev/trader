@@ -1,0 +1,10 @@
+{
+  "name": "lean",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:py": "python3 -m venv .venv && .venv/bin/pip install lean",
+    "live": ".venv/bin/lean live main.py --environment live-paper",
+    "backtest": ".venv/bin/lean backtest main.py"
+  }
+}

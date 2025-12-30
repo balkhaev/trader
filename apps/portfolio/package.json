@@ -1,0 +1,10 @@
+{
+  "name": "portfolio",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:py": "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+    "dev": ".venv/bin/python main.py",
+    "start": ".venv/bin/python main.py"
+  }
+}

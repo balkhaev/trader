@@ -1,0 +1,1 @@
+ALTER TYPE "public"."news_source_type" ADD VALUE 'web_scraper';

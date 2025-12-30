@@ -1,0 +1,4 @@
+2025-12-31T09:52:20.8669489Z TRACE:: Engine.Main(): LEAN ALGORITHMIC TRADING ENGINE v2.5.0.0 Mode: DEBUG (64bit) Host: MacBook-Pro-Mikhail
+2025-12-31T09:52:20.8800936Z TRACE:: Engine.Main(): Started 9:52 AM
+2025-12-31T09:52:20.8830985Z TRACE:: Config.Get(): Configuration key not found. Key: lean-manager-type - Using default value: LocalLeanManager
+2025-12-31T09:52:20.8951528Z TRACE:: JobQueue.NextJob(): Selected /LeanCLI/main.py

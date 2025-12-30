@@ -1,0 +1,2 @@
+/crypto/binance/hour/btcusdt_trade.zip
+/alternative/interest-rate/usa/interest-rate.csv
