@@ -1,11 +1,11 @@
 {
   "active": true,
   "spec": "007-add-predictionvector-repository-for-prediction-tra",
-  "state": "building",
+  "state": "complete",
   "subtasks": {
-    "completed": 9,
+    "completed": 11,
     "total": 11,
-    "in_progress": 1,
+    "in_progress": 0,
     "failed": 0
   },
   "phase": {
@@ -18,8 +18,8 @@
     "max": 1
   },
   "session": {
-    "number": 739,
+    "number": 740,
     "started_at": "2026-01-07T17:37:16.777860"
   },
-  "last_update": "2026-01-07T20:19:47.751980"
+  "last_update": "2026-01-07T20:25:30.119500"
 }
