@@ -60,3 +60,5 @@ apps/lean/*.ipynb_checkpoints
 .cache
 tmp
 temp
+
+.auto-claude
