@@ -9,7 +9,12 @@
       "description": "calculateSentimentTrend method compares average sentiment between current and previous periods (1h/24h). Uses 0.05 threshold for determining direction (improving/declining/stable). Queries newsAnalysis table by analyzedAt timestamp for completed analyses only.",
       "category": "implementation",
       "discovered_at": "2026-01-07T14:36:49.697286+00:00"
+    },
+    "apps/server/src/services/agent/executor.service.ts": {
+      "description": "executor.service.ts now uses contextBuilderService.getNewsContext(strategy) for enriched news data. Logs \"Context built\" with hasNews, headlineCount, hasAnalysis, hasTrend. formatNewsContext() includes all enriched fields (keyPoints, recommendations, affectedAssets, sentimentTrend) in agent prompts.",
+      "category": "integration",
+      "discovered_at": "2026-01-07T17:04:25.560336+00:00"
     }
   },
-  "last_updated": "2026-01-07T14:36:49.697298+00:00"
+  "last_updated": "2026-01-07T17:04:25.560356+00:00"
 }
