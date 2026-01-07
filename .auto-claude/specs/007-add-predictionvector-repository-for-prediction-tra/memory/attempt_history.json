@@ -5167,6 +5167,42 @@
         }
       ],
       "status": "completed"
+    },
+    "2.4": {
+      "attempts": [
+        {
+          "session": 736,
+          "timestamp": "2026-01-07T20:14:45.909691",
+          "approach": "Implemented: Add methods: markAsChecked(id) - increments checkCount and sets checkedAt timestamp; resolve(id, out",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "2.5": {
+      "attempts": [
+        {
+          "session": 737,
+          "timestamp": "2026-01-07T20:17:58.475428",
+          "approach": "Implemented: Add analytics methods: getAgentAccuracy(agentId) - returns avg accuracy for resolved predictions; ge",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "2.6": {
+      "attempts": [
+        {
+          "session": 738,
+          "timestamp": "2026-01-07T20:19:40.522186",
+          "approach": "Implemented: Add predictionVectorRepository instance export and all type exports (PredictionVector, PredictionVec",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
     }
   },
   "stuck_subtasks": [
@@ -5185,6 +5221,6 @@
   ],
   "metadata": {
     "created_at": "2026-01-07T17:37:16.777489",
-    "last_updated": "2026-01-07T20:12:04.636299"
+    "last_updated": "2026-01-07T20:19:40.522208"
   }
 }
