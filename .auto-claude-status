@@ -1,25 +1,25 @@
 {
   "active": true,
-  "spec": "007-add-predictionvector-repository-for-prediction-tra",
-  "state": "complete",
+  "spec": "015-split-large-executor-service-ts-into-focused-modul",
+  "state": "building",
   "subtasks": {
-    "completed": 11,
-    "total": 11,
-    "in_progress": 0,
+    "completed": 6,
+    "total": 10,
+    "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "Verification",
+    "current": "Refactor Orchestrator",
     "id": null,
-    "total": 2
+    "total": 3
   },
   "workers": {
     "active": 0,
     "max": 1
   },
   "session": {
-    "number": 740,
-    "started_at": "2026-01-07T17:37:16.777860"
+    "number": 736,
+    "started_at": "2026-01-07T17:37:52.586594"
   },
-  "last_update": "2026-01-07T20:25:30.119500"
+  "last_update": "2026-01-07T20:12:59.060130"
 }

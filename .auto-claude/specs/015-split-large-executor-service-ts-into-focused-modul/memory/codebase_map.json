@@ -1,0 +1,10 @@
+{
+  "discovered_files": {
+    "apps/server/src/services/agent/executor.service.ts": {
+      "description": "Monolithic file with 483 lines handling 5 concerns: lifecycle management (start/stop agents), context building (positions, trades, market data, news), risk checking (max positions, timing, daily loss), LLM trade decisions (OpenAI), and trade execution (open/close positions)",
+      "category": "architecture",
+      "discovered_at": "2026-01-07T14:40:30.684199+00:00"
+    }
+  },
+  "last_updated": "2026-01-07T14:40:30.684215+00:00"
+}
