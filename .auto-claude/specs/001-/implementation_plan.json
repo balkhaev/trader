@@ -132,12 +132,14 @@
             "command": "cd /Users/balkhaev/mycode/trader && grep -n 'emitHighImpactNews' apps/server/src/services/news/scheduler.ts",
             "expected": "newsEventEmitter.emitHighImpactNews"
           },
-          "status": "pending",
+          "status": "completed",
           "implementation_details": {
             "location": "After saving analysis result in analyzeUnprocessedArticles",
             "condition": "if (llmResponse.result.impactScore > 0.7)",
             "emit": "newsEventEmitter.emitHighImpactNews({ articleId, title, sentiment, impactScore, affectedAssets })"
-          }
+          },
+          "notes": "High-impact news event emission added in analyzeUnprocessedArticles when impactScore > 0.7. Already committed in 1b6aedb.",
+          "updated_at": "2026-01-07T14:30:38.919887+00:00"
         }
       ]
     },
@@ -167,11 +169,13 @@
             "command": "cd /Users/balkhaev/mycode/trader && bun run check-types 2>&1 | head -20",
             "expected": "No type errors"
           },
-          "status": "pending",
+          "status": "completed",
           "implementation_details": {
             "new_method": "getNewsAnalysisData(articleIds: string[]): Promise<{ keyPoints, recommendations, affectedAssets, avgImpactScore }>",
             "data_source": "Query newsAnalysis table where articleId in ids and status = 'completed'"
-          }
+          },
+          "notes": "Context-builder.service.ts created with getNewsAnalysisData() helper function. The function aggregates analysis data from newsAnalysis table for given article IDs, including: keyPoints (deduplicated), recommendations, affectedAssets (merged by symbol with highest confidence), avgImpactScore, and avgSentimentScore. Returns null if no completed analyses found. Already committed as e2e0e4e.",
+          "updated_at": "2026-01-07T14:34:17.752785+00:00"
         },
         {
           "id": "subtask-4-2",
@@ -187,11 +191,13 @@
             "command": "cd /Users/balkhaev/mycode/trader && grep -n 'sentimentTrend' apps/server/src/services/agent/executor/context-builder.service.ts",
             "expected": "sentimentTrend calculation found"
           },
-          "status": "pending",
+          "status": "completed",
           "implementation_details": {
             "new_method": "calculateSentimentTrend(period: '1h' | '24h'): Promise<{ direction, change, period }>",
             "algorithm": "Compare avg sentiment of current period vs previous period, calculate direction and change"
-          }
+          },
+          "notes": "Implemented calculateSentimentTrend method in context-builder.service.ts. The method compares average sentiment scores between current and previous periods (1h or 24h), determines direction (improving/declining/stable) using a 0.05 threshold, and returns a SentimentTrend object with direction, change value, and period. Already committed as 12ae462.",
+          "updated_at": "2026-01-07T14:36:43.736905+00:00"
         },
         {
           "id": "subtask-4-3",
@@ -207,7 +213,7 @@
             "command": "cd /Users/balkhaev/mycode/trader && bun run check-types 2>&1 | head -20",
             "expected": "No type errors"
           },
-          "status": "pending",
+          "status": "completed",
           "implementation_details": {
             "return_value": {
               "headlines": "from canonical stories",
@@ -218,7 +224,9 @@
               "sentimentTrend": "calculated trend"
             },
             "fallback": "If no analyzed news, return raw headlines with neutral sentiment"
-          }
+          },
+          "notes": "Implementation completed and committed in f75b11c. Added getNewsContext(strategy) method that: (1) checks if 'news' is in strategy.dataSources, (2) fetches recent articles (24h) via newsRepository.findArticles(), (3) aggregates analysis data (keyPoints, recommendations, affectedAssets) using getNewsAnalysisData(), (4) calculates sentiment trend using calculateSentimentTrend('1h'), (5) returns enriched NewsContext with proper error handling and fallback to minimal context.",
+          "updated_at": "2026-01-07T14:39:36.240417+00:00"
         }
       ]
     },
@@ -412,5 +420,5 @@
   "planStatus": "in_progress",
   "updated_at": "2026-01-07T14:23:53.683Z",
   "recoveryNote": "Task recovered from stuck state at 2026-01-07T14:23:53.653Z",
-  "last_updated": "2026-01-07T14:29:02.158620+00:00"
+  "last_updated": "2026-01-07T14:39:36.240429+00:00"
 }
