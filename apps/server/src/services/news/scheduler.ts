@@ -380,6 +380,20 @@ export const newsScheduler = {
         console.log(
           `[NewsScheduler] Analyzed article: ${article.title.substring(0, 50)}...`
         );
+
+        // Emit high-impact news event if impactScore > 0.7
+        if (llmResponse.result.impactScore > 0.7) {
+          newsEventEmitter.emitHighImpactNews({
+            articleId: article.id,
+            title: article.title,
+            sentiment: llmResponse.result.sentiment,
+            impactScore: llmResponse.result.impactScore,
+            affectedAssets: llmResponse.result.affectedAssets,
+          });
+          console.log(
+            `[NewsScheduler] Emitted high-impact news event for: ${article.title.substring(0, 50)}... (impact: ${llmResponse.result.impactScore})`
+          );
+        }
       } catch (error) {
         await db
           .update(newsAnalysis)
