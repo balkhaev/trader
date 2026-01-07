@@ -1,0 +1,34 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read(./**)",
+      "Write(./**)",
+      "Edit(./**)",
+      "Glob(./**)",
+      "Grep(./**)",
+      "Read(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Write(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Edit(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Glob(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Grep(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Read(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/.auto-claude/specs/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Write(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/.auto-claude/specs/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Edit(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/.auto-claude/specs/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Bash(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "mcp__context7__resolve-library-id(*)",
+      "mcp__context7__get-library-docs(*)",
+      "mcp__graphiti-memory__search_nodes(*)",
+      "mcp__graphiti-memory__search_facts(*)",
+      "mcp__graphiti-memory__add_episode(*)",
+      "mcp__graphiti-memory__get_episodes(*)",
+      "mcp__graphiti-memory__get_entity_edge(*)"
+    ]
+  }
+}
