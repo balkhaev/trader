@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   index,
+  integer,
   jsonb,
   numeric,
   pgEnum,
@@ -43,6 +44,12 @@ export const creationTypeEnum = pgEnum("creation_type", [
 export const marketPositionSideEnum = pgEnum("market_position_side", [
   "yes",
   "no",
+]);
+
+export const predictionVectorStatusEnum = pgEnum("prediction_vector_status", [
+  "pending", // Awaiting check
+  "checked", // Verified by system
+  "resolved", // Outcome determined
 ]);
 
 // ==================== TYPES ====================
@@ -228,6 +235,52 @@ export const marketTrade = pgTable(
     index("market_trade_user_idx").on(table.userId),
     index("market_trade_agent_idx").on(table.agentId),
     index("market_trade_created_at_idx").on(table.createdAt),
+  ]
+);
+
+// Prediction Vectors - AI agent predictions
+export const predictionVector = pgTable(
+  "prediction_vector",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+
+    // References
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agent.id, { onDelete: "cascade" }),
+    marketId: text("market_id")
+      .notNull()
+      .references(() => predictionMarket.id, { onDelete: "cascade" }),
+
+    // Prediction
+    prediction: marketPositionSideEnum("prediction").notNull(),
+    confidence: numeric("confidence", { precision: 3, scale: 2 }).notNull(), // 0.00 to 1.00
+    reasoning: text("reasoning"),
+
+    // Status tracking
+    status: predictionVectorStatusEnum("status").notNull().default("pending"),
+    checkCount: integer("check_count").notNull().default(0),
+
+    // Accuracy (calculated after resolution)
+    accuracy: numeric("accuracy", { precision: 3, scale: 2 }), // 0.00 to 1.00, null until resolved
+
+    // Timestamps
+    predictedAt: timestamp("predicted_at").defaultNow().notNull(),
+    checkedAt: timestamp("checked_at"),
+    resolvedAt: timestamp("resolved_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("prediction_vector_agent_idx").on(table.agentId),
+    index("prediction_vector_market_idx").on(table.marketId),
+    index("prediction_vector_status_idx").on(table.status),
+    index("prediction_vector_predicted_at_idx").on(table.predictedAt),
   ]
 );
 
