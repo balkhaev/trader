@@ -201,11 +201,51 @@
     "Code passes Biome linting"
   ],
   "qa_signoff": {
-    "status": "pending",
-    "tests_passed": null,
-    "issues": null
+    "status": "fixes_applied",
+    "timestamp": "2026-01-07T20:35:00.000Z",
+    "qa_session": 1,
+    "fix_session": 1,
+    "issues_fixed": [
+      {
+        "title": "Missing ConfidenceBucket Type Export",
+        "fix_commit": "cb1b317"
+      }
+    ],
+    "ready_for_qa_revalidation": true,
+    "tests_passed": {
+      "manual_validation": "completed",
+      "pattern_compliance": "pass",
+      "security_review": "pass",
+      "type_safety": "pass"
+    },
+    "fix_request_file": "QA_FIX_REQUEST.md",
+    "report_file": "qa_report.md"
   },
   "total_subtasks": 11,
   "completed_subtasks": 0,
-  "last_updated": "2026-01-07T17:24:54.327620+00:00"
+  "last_updated": "2026-01-07T17:24:54.327620+00:00",
+  "qa_iteration_history": [
+    {
+      "iteration": 1,
+      "status": "rejected",
+      "timestamp": "2026-01-07T17:30:58.341460+00:00",
+      "issues": [
+        {
+          "type": "critical",
+          "title": "Missing ConfidenceBucket Type Export",
+          "location": "packages/db/src/repositories/index.ts:69-74",
+          "fix_required": "Add ConfidenceBucket to type exports in repository index.ts"
+        }
+      ],
+      "duration_seconds": 328.26
+    }
+  ],
+  "qa_stats": {
+    "total_iterations": 1,
+    "last_iteration": 1,
+    "last_status": "rejected",
+    "issues_by_type": {
+      "critical": 1
+    }
+  }
 }
