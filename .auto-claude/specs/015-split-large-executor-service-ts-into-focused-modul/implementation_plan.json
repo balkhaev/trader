@@ -1,0 +1,175 @@
+{
+  "feature": "Split large executor.service.ts into focused modules",
+  "description": "Refactor the monolithic executor.service.ts (483 lines) into 5 focused single-responsibility services: types, context building, risk checking, LLM decisions, and trade execution. Following existing patterns in prediction-market/ and trends/ directories.",
+  "created_at": "2026-01-07T14:34:47.467Z",
+  "updated_at": "2026-01-07T14:37:50.524Z",
+  "status": "in_progress",
+  "planStatus": "in_progress",
+  "workflow_type": "development",
+  "services_involved": [
+    "apps/server/src/services/agent/executor.service.ts",
+    "apps/server/src/services/agent/executor/"
+  ],
+  "spec_file": "spec.md",
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Create Shared Types",
+      "description": "Extract interfaces and types into a shared types file",
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "Create executor types file",
+          "description": "Create apps/server/src/services/agent/executor/types.ts with TradeDecision, ExecutorContext, RiskCheckResult interfaces and AGENT_DECISION_PROMPT constant",
+          "status": "completed",
+          "files": [
+            "apps/server/src/services/agent/executor/types.ts"
+          ],
+          "notes": "types.ts file already exists with all required interfaces (TradeDecision, ExecutorContext, RiskCheckResult) and AGENT_DECISION_PROMPT constant. All types properly exported and match the original executor.service.ts implementation.",
+          "updated_at": "2026-01-07T16:58:40.574946+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Extract Context Builder",
+      "description": "Create dedicated service for building execution context",
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "Create context service",
+          "description": "Create apps/server/src/services/agent/executor/context.service.ts with buildContext logic - fetches open positions, recent trades, market data, and news context",
+          "status": "pending",
+          "files": [
+            "apps/server/src/services/agent/executor/context.service.ts"
+          ],
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Extract Risk Checker",
+      "description": "Create dedicated service for risk limit validation",
+      "subtasks": [
+        {
+          "id": "3.1",
+          "title": "Create risk service",
+          "description": "Create apps/server/src/services/agent/executor/risk.service.ts with checkRiskLimits logic - validates max positions, time between trades, daily loss limits",
+          "status": "pending",
+          "files": [
+            "apps/server/src/services/agent/executor/risk.service.ts"
+          ],
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Extract Decision Maker",
+      "description": "Create dedicated service for LLM trade decisions",
+      "subtasks": [
+        {
+          "id": "4.1",
+          "title": "Create decision service",
+          "description": "Create apps/server/src/services/agent/executor/decision.service.ts with getTradeDecision logic - formats prompts, calls OpenAI, parses responses",
+          "status": "pending",
+          "files": [
+            "apps/server/src/services/agent/executor/decision.service.ts"
+          ],
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "Extract Trade Executor",
+      "description": "Create dedicated service for executing trades",
+      "subtasks": [
+        {
+          "id": "5.1",
+          "title": "Create trade service",
+          "description": "Create apps/server/src/services/agent/executor/trade.service.ts with executeTrade logic - opens positions, closes positions, updates performance",
+          "status": "pending",
+          "files": [
+            "apps/server/src/services/agent/executor/trade.service.ts"
+          ],
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "name": "Refactor Orchestrator",
+      "description": "Refactor executor.service.ts to be a thin orchestrator using extracted services",
+      "subtasks": [
+        {
+          "id": "6.1",
+          "title": "Create executor module index",
+          "description": "Create apps/server/src/services/agent/executor/index.ts to export all services",
+          "status": "pending",
+          "files": [
+            "apps/server/src/services/agent/executor/index.ts"
+          ],
+          "notes": ""
+        },
+        {
+          "id": "6.2",
+          "title": "Refactor executor.service.ts",
+          "description": "Update apps/server/src/services/agent/executor.service.ts to use the extracted services - keep only startAgent, stopAgent, executeAgent, getRunningAgents, stopAll as thin orchestration layer",
+          "status": "pending",
+          "files": [
+            "apps/server/src/services/agent/executor.service.ts"
+          ],
+          "notes": ""
+        },
+        {
+          "id": "6.3",
+          "title": "Update agent index exports",
+          "description": "Update apps/server/src/services/agent/index.ts to export new services if needed",
+          "status": "pending",
+          "files": [
+            "apps/server/src/services/agent/index.ts"
+          ],
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "name": "Verification",
+      "description": "Verify the refactoring works correctly",
+      "subtasks": [
+        {
+          "id": "7.1",
+          "title": "Run TypeScript check",
+          "description": "Run bun check-types to verify no type errors",
+          "status": "pending",
+          "files": [],
+          "notes": ""
+        },
+        {
+          "id": "7.2",
+          "title": "Run linting",
+          "description": "Run bun check to verify code style",
+          "status": "pending",
+          "files": [],
+          "notes": ""
+        }
+      ]
+    }
+  ],
+  "final_acceptance": [
+    "All TypeScript compilation passes without errors",
+    "Linting passes with bun check",
+    "executor.service.ts is reduced to ~100 lines (orchestration only)",
+    "Each extracted service has a single responsibility",
+    "All imports resolve correctly"
+  ],
+  "qa_status": {
+    "status": "pending",
+    "issues": "",
+    "tests_passed": ""
+  },
+  "last_updated": "2026-01-07T16:58:40.574960+00:00"
+}
