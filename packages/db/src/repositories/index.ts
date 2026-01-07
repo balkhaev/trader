@@ -68,6 +68,7 @@ export { predictionMarketRepository } from "./prediction-market.repository";
 // Prediction Vector
 export type {
   AgentPredictionStats,
+  ConfidenceBucket,
   PredictionVector,
   PredictionVectorFilters,
   PredictionVectorStatus,
