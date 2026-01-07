@@ -1,25 +1,25 @@
 {
   "active": true,
-  "spec": "015-split-large-executor-service-ts-into-focused-modul",
-  "state": "building",
+  "spec": "001-",
+  "state": "complete",
   "subtasks": {
-    "completed": 6,
+    "completed": 10,
     "total": 10,
-    "in_progress": 1,
+    "in_progress": 0,
     "failed": 0
   },
   "phase": {
-    "current": "Refactor Orchestrator",
+    "current": "Integration Verification",
     "id": null,
-    "total": 3
+    "total": 2
   },
   "workers": {
     "active": 0,
     "max": 1
   },
   "session": {
-    "number": 736,
-    "started_at": "2026-01-07T17:37:52.586594"
+    "number": 735,
+    "started_at": "2026-01-07T17:23:34.247186"
   },
-  "last_update": "2026-01-07T20:12:59.060130"
+  "last_update": "2026-01-07T20:04:45.835972"
 }

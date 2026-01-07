@@ -1,4 +1,7 @@
-import { type Agent, agentRepository } from "@trader/db";
+import {
+  type Agent,
+  agentRepository,
+} from "@trader/db";
 import { logger } from "../../lib/logger";
 import {
   type TradeDecision,

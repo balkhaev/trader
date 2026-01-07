@@ -1,6 +1,18 @@
 import { EventEmitter } from "node:events";
 import type { ParsedArticle } from "../types";
 
+export interface HighImpactNewsPayload {
+  articleId: string;
+  title: string;
+  sentiment: string;
+  impactScore: number;
+  affectedAssets: {
+    symbol: string;
+    impact: "positive" | "negative" | "neutral";
+    confidence: number;
+  }[];
+}
+
 export interface NewsEvents {
   "article:new": [article: ParsedArticle, sourceId: string, sourceName: string];
   "article:saved": [
@@ -8,6 +20,7 @@ export interface NewsEvents {
     sourceId: string,
     sourceName: string,
   ];
+  "news:high-impact": [payload: HighImpactNewsPayload];
   "source:connected": [sourceId: string, sourceName: string];
   "source:disconnected": [sourceId: string, sourceName: string];
   "source:error": [sourceId: string, sourceName: string, error: Error];
@@ -40,6 +53,10 @@ class NewsEventEmitter extends EventEmitter {
 
   emitSourceError(sourceId: string, sourceName: string, error: Error): void {
     this.emit("source:error", sourceId, sourceName, error);
+  }
+
+  emitHighImpactNews(payload: HighImpactNewsPayload): void {
+    this.emit("news:high-impact", payload);
   }
 
   onArticleNew(
@@ -78,6 +95,10 @@ class NewsEventEmitter extends EventEmitter {
     handler: (sourceId: string, sourceName: string, error: Error) => void
   ): void {
     this.on("source:error", handler);
+  }
+
+  onHighImpactNews(handler: (payload: HighImpactNewsPayload) => void): void {
+    this.on("news:high-impact", handler);
   }
 }
 

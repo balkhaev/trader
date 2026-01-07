@@ -61,4 +61,5 @@ apps/lean/*.ipynb_checkpoints
 tmp
 temp
 
-.auto-claude
+# Auto Claude data directory
+.auto-claude/

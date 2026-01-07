@@ -10,7 +10,7 @@ import type { ParsedArticle, RealtimeStatus } from "./types";
 import { newsWebSocketServer } from "./websocket/server";
 
 // Интервалы в миллисекундах
-const FETCH_INTERVAL = 5 * 60 * 1000; // 5 минут
+const FETCH_INTERVAL = 2 * 60 * 1000; // 2 минуты
 const ANALYZE_INTERVAL = 60 * 1000; // 1 минута
 
 let fetchTimer: ReturnType<typeof setInterval> | null = null;
@@ -43,7 +43,7 @@ export const newsScheduler = {
     console.log("[NewsScheduler] Starting...");
     isRunning = true;
 
-    // Фетч новостей каждые 5 минут (только для RSS источников)
+    // Фетч новостей каждые 2 минуты (только для RSS источников)
     fetchTimer = setInterval(async () => {
       try {
         console.log("[NewsScheduler] Fetching news from RSS sources...");
@@ -380,6 +380,20 @@ export const newsScheduler = {
         console.log(
           `[NewsScheduler] Analyzed article: ${article.title.substring(0, 50)}...`
         );
+
+        // Emit high-impact news event if impactScore > 0.7
+        if (llmResponse.result.impactScore > 0.7) {
+          newsEventEmitter.emitHighImpactNews({
+            articleId: article.id,
+            title: article.title,
+            sentiment: llmResponse.result.sentiment,
+            impactScore: llmResponse.result.impactScore,
+            affectedAssets: llmResponse.result.affectedAssets,
+          });
+          console.log(
+            `[NewsScheduler] Emitted high-impact news event for: ${article.title.substring(0, 50)}... (impact: ${llmResponse.result.impactScore})`
+          );
+        }
       } catch (error) {
         await db
           .update(newsAnalysis)
