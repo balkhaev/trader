@@ -1,0 +1,25 @@
+# Build Progress
+
+## Subtask 6-1: Verify news scheduler runs with 2-minute interval
+
+**Status:** COMPLETED
+**Date:** 2025-01-07
+
+### Verification Results:
+
+1. **Code Verification:**
+   - File: `apps/server/src/services/news/scheduler.ts`
+   - Line 13: `const FETCH_INTERVAL = 2 * 60 * 1000; // 2 минуты`
+   - Confirmed: Interval is correctly set to 2 minutes (120,000 ms)
+
+2. **API Verification:**
+   - Endpoint: `GET /api/news/scheduler/status`
+   - Response: `{"running":true,"realtimeRunning":true}`
+   - Status Code: 200 OK
+   - Confirmed: Scheduler is running
+
+### Quality Checklist:
+- [x] FETCH_INTERVAL is 2 * 60 * 1000 (2 minutes)
+- [x] Scheduler is running (isRunning = true)
+- [x] Realtime mode is running (realtimeRunning = true)
+- [x] API endpoint returns expected response

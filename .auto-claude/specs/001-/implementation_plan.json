@@ -256,11 +256,13 @@
             "command": "cd /Users/balkhaev/mycode/trader && grep -A5 'newsContext' apps/server/src/services/agent/executor.service.ts | grep -E 'keyPoints|recommendations|sentimentTrend'",
             "expected": "Enriched news fields found in formatting"
           },
-          "status": "pending",
+          "status": "completed",
           "implementation_details": {
             "format": "Update {newsContext} replacement to include keyPoints, recommendations, affectedAssets, sentimentTrend",
             "example_output": "Headlines: ...\nSentiment: X (improving over 1h)\nKey Points: ...\nRecommendations: ...\nAffected Assets: ..."
-          }
+          },
+          "notes": "News context formatting in getTradeDecision already includes enriched data fields (keyPoints, recommendations, affectedAssets, sentimentTrend) via formatNewsContext() method. Verification passed: all enriched fields found in formatting code.",
+          "updated_at": "2026-01-07T16:53:54.741832+00:00"
         }
       ]
     },
@@ -288,7 +290,9 @@
             "url": "http://localhost:3000/api/news/scheduler/status",
             "expected_status": 200
           },
-          "status": "pending"
+          "status": "completed",
+          "notes": "Verified scheduler runs with 2-minute interval. FETCH_INTERVAL = 2 * 60 * 1000 in scheduler.ts. API endpoint /api/news/scheduler/status returns {\"running\":true,\"realtimeRunning\":true} with HTTP 200.",
+          "updated_at": "2026-01-07T17:00:36.235008+00:00"
         },
         {
           "id": "subtask-6-2",
@@ -420,5 +424,5 @@
   "planStatus": "in_progress",
   "updated_at": "2026-01-07T14:23:53.683Z",
   "recoveryNote": "Task recovered from stuck state at 2026-01-07T14:23:53.653Z",
-  "last_updated": "2026-01-07T14:39:36.240429+00:00"
+  "last_updated": "2026-01-07T17:00:36.235016+00:00"
 }
