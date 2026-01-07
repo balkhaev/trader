@@ -32,6 +32,24 @@ export interface CreatePredictionVectorData {
   checkCount?: number;
 }
 
+export interface ConfidenceBucket {
+  range: string;
+  minConfidence: number;
+  maxConfidence: number;
+  totalPredictions: number;
+  resolvedPredictions: number;
+  avgAccuracy: number | null;
+  calibration: number | null;
+}
+
+export interface AgentPredictionStats {
+  totalPredictions: number;
+  resolvedPredictions: number;
+  avgAccuracy: number | null;
+  avgConfidence: number | null;
+  calibrationScore: number | null;
+}
+
 class PredictionVectorRepository extends BaseRepository<
   typeof predictionVector
 > {
@@ -179,6 +197,132 @@ class PredictionVectorRepository extends BaseRepository<
       .where(eq(predictionVector.id, id))
       .returning();
     return updated ?? null;
+  }
+
+  // ===== Analytics =====
+
+  async getAgentAccuracy(agentId: string): Promise<number | null> {
+    const vectors = await this.db
+      .select()
+      .from(predictionVector)
+      .where(
+        and(
+          eq(predictionVector.agentId, agentId),
+          eq(predictionVector.status, "resolved")
+        )
+      );
+
+    if (vectors.length === 0) return null;
+
+    const totalAccuracy = vectors.reduce((sum, vector) => {
+      return sum + Number(vector.accuracy ?? 0);
+    }, 0);
+
+    return totalAccuracy / vectors.length;
+  }
+
+  async getAccuracyByConfidenceRange(
+    agentId?: string
+  ): Promise<ConfidenceBucket[]> {
+    const conditions: SQL[] = [];
+    if (agentId) conditions.push(eq(predictionVector.agentId, agentId));
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const vectors = await this.db
+      .select()
+      .from(predictionVector)
+      .where(whereClause);
+
+    // Define confidence buckets
+    const buckets = [
+      { range: "0.00-0.50", minConfidence: 0, maxConfidence: 0.5 },
+      { range: "0.50-0.70", minConfidence: 0.5, maxConfidence: 0.7 },
+      { range: "0.70-0.90", minConfidence: 0.7, maxConfidence: 0.9 },
+      { range: "0.90-1.00", minConfidence: 0.9, maxConfidence: 1.0 },
+    ];
+
+    return buckets.map((bucket) => {
+      const bucketVectors = vectors.filter((v) => {
+        const confidence = Number(v.confidence);
+        return confidence >= bucket.minConfidence && confidence <= bucket.maxConfidence;
+      });
+
+      const resolvedVectors = bucketVectors.filter(
+        (v) => v.status === "resolved" && v.accuracy !== null
+      );
+
+      let avgAccuracy: number | null = null;
+      let calibration: number | null = null;
+
+      if (resolvedVectors.length > 0) {
+        const totalAccuracy = resolvedVectors.reduce((sum, v) => {
+          return sum + Number(v.accuracy ?? 0);
+        }, 0);
+        avgAccuracy = totalAccuracy / resolvedVectors.length;
+
+        // Calibration: how close is avg confidence to avg accuracy
+        const totalConfidence = resolvedVectors.reduce((sum, v) => {
+          return sum + Number(v.confidence);
+        }, 0);
+        const avgConfidence = totalConfidence / resolvedVectors.length;
+        calibration = 1 - Math.abs(avgConfidence - avgAccuracy);
+      }
+
+      return {
+        range: bucket.range,
+        minConfidence: bucket.minConfidence,
+        maxConfidence: bucket.maxConfidence,
+        totalPredictions: bucketVectors.length,
+        resolvedPredictions: resolvedVectors.length,
+        avgAccuracy,
+        calibration,
+      };
+    });
+  }
+
+  async getAgentStats(agentId: string): Promise<AgentPredictionStats> {
+    const vectors = await this.db
+      .select()
+      .from(predictionVector)
+      .where(eq(predictionVector.agentId, agentId));
+
+    const resolvedVectors = vectors.filter(
+      (v) => v.status === "resolved" && v.accuracy !== null
+    );
+
+    let avgAccuracy: number | null = null;
+    let avgConfidence: number | null = null;
+    let calibrationScore: number | null = null;
+
+    if (vectors.length > 0) {
+      const totalConfidence = vectors.reduce((sum, v) => {
+        return sum + Number(v.confidence);
+      }, 0);
+      avgConfidence = totalConfidence / vectors.length;
+    }
+
+    if (resolvedVectors.length > 0) {
+      const totalAccuracy = resolvedVectors.reduce((sum, v) => {
+        return sum + Number(v.accuracy ?? 0);
+      }, 0);
+      avgAccuracy = totalAccuracy / resolvedVectors.length;
+
+      // Calibration score: how well does confidence match accuracy across all resolved predictions
+      const totalConfidence = resolvedVectors.reduce((sum, v) => {
+        return sum + Number(v.confidence);
+      }, 0);
+      const avgResolvedConfidence = totalConfidence / resolvedVectors.length;
+      calibrationScore = 1 - Math.abs(avgResolvedConfidence - avgAccuracy);
+    }
+
+    return {
+      totalPredictions: vectors.length,
+      resolvedPredictions: resolvedVectors.length,
+      avgAccuracy,
+      avgConfidence,
+      calibrationScore,
+    };
   }
 }
 
