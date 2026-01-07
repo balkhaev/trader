@@ -4,36 +4,12 @@ import {
   type AgentTrade,
   agentRepository,
   marketRepository,
-  type NewsArticle,
-  newsRepository,
 } from "@trader/db";
 import type { RiskParams } from "@trader/db/schema/agent";
 import { logger } from "../../lib/logger";
 import { openaiService } from "../llm/openai.service";
-
-interface TradeDecision {
-  shouldTrade: boolean;
-  action: "long" | "short" | "close" | "hold";
-  symbol: string;
-  quantity: number;
-  entryPrice: number;
-  stopLoss?: number;
-  takeProfit?: number;
-  reasoning: string;
-  confidence: number;
-  dataSources: AgentTrade["dataSources"];
-}
-
-interface ExecutorContext {
-  agent: Agent;
-  openPositions: AgentTrade[];
-  recentTrades: AgentTrade[];
-  marketData: Record<
-    string,
-    { price: number; change24h: number; volume: number }
-  >;
-  newsContext?: { headlines: string[]; sentiment: number };
-}
+import { contextBuilderService } from "./executor/context-builder.service";
+import type { NewsContext, TradeDecision, ExecutorContext } from "./executor/types";
 
 const AGENT_DECISION_PROMPT = `You are an autonomous trading agent making decisions based on your strategy.
 
@@ -212,18 +188,17 @@ class AgentExecutorService {
       }
     }
 
-    // Get news context if strategy uses news
-    let newsContext: ExecutorContext["newsContext"];
-    if (strategy.dataSources.includes("news")) {
-      const { data: recentNews } = await newsRepository.findArticles({
-        limit: 5,
-      });
+    // Get enriched news context using context builder service
+    const newsContext = await contextBuilderService.getNewsContext(strategy);
 
-      newsContext = {
-        headlines: recentNews.map((n: NewsArticle) => n.title),
-        sentiment: 0, // Would calculate average sentiment
-      };
-    }
+    this.log.debug("Context built", {
+      agentId: agent.id,
+      hasNews: newsContext !== undefined,
+      headlineCount: newsContext?.headlines?.length ?? 0,
+      hasAnalysis: (newsContext?.keyPoints?.length ?? 0) > 0 ||
+        (newsContext?.recommendations?.length ?? 0) > 0,
+      hasTrend: newsContext?.sentimentTrend !== undefined,
+    });
 
     return {
       agent,
@@ -286,6 +261,56 @@ class AgentExecutorService {
   }
 
   /**
+   * Format news context for prompt including enriched data fields.
+   * Includes headlines, sentiment, key points, recommendations,
+   * affected assets, and sentiment trend when available.
+   */
+  private formatNewsContext(newsContext: NewsContext | undefined): string {
+    if (!newsContext) {
+      return "N/A";
+    }
+
+    const parts: string[] = [];
+
+    // Headlines
+    if (newsContext.headlines.length > 0) {
+      parts.push(`Headlines:\n${newsContext.headlines.map((h) => `- ${h}`).join("\n")}`);
+    }
+
+    // Sentiment with trend
+    let sentimentStr = `Overall Sentiment: ${newsContext.sentiment.toFixed(2)}`;
+    if (newsContext.sentimentTrend) {
+      const { direction, change, period } = newsContext.sentimentTrend;
+      const changeStr = change >= 0 ? `+${change.toFixed(2)}` : change.toFixed(2);
+      sentimentStr += ` (${direction} ${changeStr} over ${period})`;
+    }
+    parts.push(sentimentStr);
+
+    // Key points
+    if (newsContext.keyPoints && newsContext.keyPoints.length > 0) {
+      parts.push(`Key Points:\n${newsContext.keyPoints.map((p) => `- ${p}`).join("\n")}`);
+    }
+
+    // Recommendations
+    if (newsContext.recommendations && newsContext.recommendations.length > 0) {
+      const recsStr = newsContext.recommendations
+        .map((r) => `- ${r.action.toUpperCase()} ${r.symbols.join(", ")}: ${r.reasoning}`)
+        .join("\n");
+      parts.push(`Recommendations:\n${recsStr}`);
+    }
+
+    // Affected assets
+    if (newsContext.affectedAssets && newsContext.affectedAssets.length > 0) {
+      const assetsStr = newsContext.affectedAssets
+        .map((a) => `- ${a.symbol}: ${a.impact} (confidence: ${(a.confidence * 100).toFixed(0)}%)`)
+        .join("\n");
+      parts.push(`Affected Assets:\n${assetsStr}`);
+    }
+
+    return parts.join("\n\n");
+  }
+
+  /**
    * Get trade decision from LLM
    */
   private async getTradeDecision(
@@ -337,12 +362,7 @@ class AgentExecutorService {
       .replace("{recentTrades}", JSON.stringify(recentTrades.slice(0, 5)))
       .replace("{currentPnL}", currentPnL.toFixed(2))
       .replace("{marketData}", marketDataStr)
-      .replace(
-        "{newsContext}",
-        newsContext
-          ? `Headlines: ${newsContext.headlines.join(", ")}\nSentiment: ${newsContext.sentiment}`
-          : "N/A"
-      );
+      .replace("{newsContext}", this.formatNewsContext(newsContext));
 
     try {
       const response = await openaiService.chat({
