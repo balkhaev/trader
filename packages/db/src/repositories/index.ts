@@ -65,6 +65,15 @@ export type {
 } from "./prediction-market.repository";
 export { predictionMarketRepository } from "./prediction-market.repository";
 
+// Prediction Vector
+export type {
+  AgentPredictionStats,
+  PredictionVector,
+  PredictionVectorFilters,
+  PredictionVectorStatus,
+} from "./prediction-vector.repository";
+export { predictionVectorRepository } from "./prediction-vector.repository";
+
 // Signals
 export type {
   Signal,
