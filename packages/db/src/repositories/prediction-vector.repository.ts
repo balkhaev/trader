@@ -1,5 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, gte, lte, type SQL } from "drizzle-orm";
 import { predictionVector } from "../schema/prediction-market";
 import {
   BaseRepository,
@@ -61,6 +61,58 @@ class PredictionVectorRepository extends BaseRepository<
       .from(predictionVector)
       .where(eq(predictionVector.marketId, marketId))
       .orderBy(desc(predictionVector.predictedAt));
+  }
+
+  async findAll(
+    filters: PredictionVectorFilters
+  ): Promise<PaginatedResult<PredictionVector>> {
+    const {
+      agentId,
+      marketId,
+      status,
+      confidenceMin,
+      confidenceMax,
+      predictedAfter,
+      predictedBefore,
+      limit = 50,
+      offset = 0,
+    } = filters;
+
+    const conditions: SQL[] = [];
+    if (agentId) conditions.push(eq(predictionVector.agentId, agentId));
+    if (marketId) conditions.push(eq(predictionVector.marketId, marketId));
+    if (status) conditions.push(eq(predictionVector.status, status));
+    if (confidenceMin !== undefined)
+      conditions.push(gte(predictionVector.confidence, String(confidenceMin)));
+    if (confidenceMax !== undefined)
+      conditions.push(lte(predictionVector.confidence, String(confidenceMax)));
+    if (predictedAfter)
+      conditions.push(gte(predictionVector.predictedAt, predictedAfter));
+    if (predictedBefore)
+      conditions.push(lte(predictionVector.predictedAt, predictedBefore));
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [data, countResult] = await Promise.all([
+      this.db
+        .select()
+        .from(predictionVector)
+        .where(whereClause)
+        .orderBy(desc(predictionVector.predictedAt))
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ count: count() }).from(predictionVector).where(whereClause),
+    ]);
+
+    const total = Number(countResult[0]?.count ?? 0);
+
+    return {
+      data,
+      total,
+      limit,
+      offset,
+      hasMore: offset + limit < total,
+    };
   }
 
   async create(data: CreatePredictionVectorData): Promise<PredictionVector> {
