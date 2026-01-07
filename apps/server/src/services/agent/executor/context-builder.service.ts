@@ -1,7 +1,12 @@
 import { db, newsAnalysis } from "@trader/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import { logger } from "../../../lib/logger";
-import type { AffectedAsset, NewsRecommendation } from "./types";
+import type {
+  AffectedAsset,
+  NewsRecommendation,
+  SentimentPeriod,
+  SentimentTrend,
+} from "./types";
 
 /**
  * Aggregated news analysis data for agent context
@@ -137,6 +142,108 @@ class ContextBuilderService {
       this.log.error("Failed to aggregate news analysis data", {
         error: error instanceof Error ? error.message : String(error),
         articleCount: articleIds.length,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Calculate sentiment trend by comparing current period vs previous period.
+   * Uses analyzedAt timestamp to determine period boundaries.
+   *
+   * @param period - Time period to analyze ('1h' or '24h')
+   * @returns SentimentTrend with direction, change, and period or null if insufficient data
+   */
+  async calculateSentimentTrend(
+    period: SentimentPeriod
+  ): Promise<SentimentTrend | null> {
+    const now = new Date();
+    const periodMs = period === "1h" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+
+    // Current period: from (now - periodMs) to now
+    const currentPeriodStart = new Date(now.getTime() - periodMs);
+    // Previous period: from (now - 2*periodMs) to (now - periodMs)
+    const previousPeriodStart = new Date(now.getTime() - 2 * periodMs);
+
+    try {
+      // Query sentiment scores for current period
+      const currentPeriodAnalyses = await db
+        .select({ sentimentScore: newsAnalysis.sentimentScore })
+        .from(newsAnalysis)
+        .where(
+          and(
+            eq(newsAnalysis.status, "completed"),
+            gte(newsAnalysis.analyzedAt, currentPeriodStart),
+            lt(newsAnalysis.analyzedAt, now)
+          )
+        );
+
+      // Query sentiment scores for previous period
+      const previousPeriodAnalyses = await db
+        .select({ sentimentScore: newsAnalysis.sentimentScore })
+        .from(newsAnalysis)
+        .where(
+          and(
+            eq(newsAnalysis.status, "completed"),
+            gte(newsAnalysis.analyzedAt, previousPeriodStart),
+            lt(newsAnalysis.analyzedAt, currentPeriodStart)
+          )
+        );
+
+      // Calculate average sentiment for current period
+      const currentScores = currentPeriodAnalyses
+        .filter((a) => a.sentimentScore !== null)
+        .map((a) => Number(a.sentimentScore));
+      const currentAvg =
+        currentScores.length > 0
+          ? currentScores.reduce((sum, s) => sum + s, 0) / currentScores.length
+          : 0;
+
+      // Calculate average sentiment for previous period
+      const previousScores = previousPeriodAnalyses
+        .filter((a) => a.sentimentScore !== null)
+        .map((a) => Number(a.sentimentScore));
+      const previousAvg =
+        previousScores.length > 0
+          ? previousScores.reduce((sum, s) => sum + s, 0) / previousScores.length
+          : 0;
+
+      // Calculate change (clamped to -1 to 1 range)
+      const change = Math.max(-1, Math.min(1, currentAvg - previousAvg));
+
+      // Determine direction based on change magnitude
+      // Use threshold to avoid classifying noise as a trend
+      const TREND_THRESHOLD = 0.05;
+      let direction: SentimentTrend["direction"];
+      if (change > TREND_THRESHOLD) {
+        direction = "improving";
+      } else if (change < -TREND_THRESHOLD) {
+        direction = "declining";
+      } else {
+        direction = "stable";
+      }
+
+      const result: SentimentTrend = {
+        direction,
+        change: Number(change.toFixed(4)),
+        period,
+      };
+
+      this.log.debug("Sentiment trend calculated", {
+        period,
+        currentPeriodCount: currentScores.length,
+        previousPeriodCount: previousScores.length,
+        currentAvg: currentAvg.toFixed(4),
+        previousAvg: previousAvg.toFixed(4),
+        change: change.toFixed(4),
+        direction,
+      });
+
+      return result;
+    } catch (error) {
+      this.log.error("Failed to calculate sentiment trend", {
+        error: error instanceof Error ? error.message : String(error),
+        period,
       });
       return null;
     }
