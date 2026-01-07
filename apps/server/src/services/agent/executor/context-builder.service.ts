@@ -1,8 +1,9 @@
-import { db, newsAnalysis } from "@trader/db";
+import { type AgentStrategy, db, newsAnalysis, newsRepository } from "@trader/db";
 import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import { logger } from "../../../lib/logger";
 import type {
   AffectedAsset,
+  NewsContext,
   NewsRecommendation,
   SentimentPeriod,
   SentimentTrend,
@@ -246,6 +247,98 @@ class ContextBuilderService {
         period,
       });
       return null;
+    }
+  }
+
+  /**
+   * Build enriched news context for agent decision making.
+   * Fetches recent articles, aggregates analysis data, and calculates sentiment trend.
+   *
+   * @param strategy - Agent strategy to check if news data source is enabled
+   * @returns Enriched NewsContext or undefined if news is not a data source
+   */
+  async getNewsContext(
+    strategy: AgentStrategy
+  ): Promise<NewsContext | undefined> {
+    // Check if news data source is enabled in strategy
+    if (!strategy.dataSources.includes("news")) {
+      return undefined;
+    }
+
+    try {
+      // Fetch recent articles (last 24 hours, limit to 10 for context)
+      const { data: recentArticles } = await newsRepository.findArticles({
+        hoursAgo: 24,
+        limit: 10,
+      });
+
+      // Extract headlines from articles
+      const headlines = recentArticles.map((article) => article.title);
+
+      // If no articles found, return minimal context with neutral sentiment
+      if (recentArticles.length === 0) {
+        this.log.debug("No recent news articles found, returning empty context");
+        return {
+          headlines: [],
+          sentiment: 0,
+        };
+      }
+
+      // Get article IDs for analysis aggregation
+      const articleIds = recentArticles.map((article) => article.id);
+
+      // Fetch aggregated analysis data and sentiment trend in parallel
+      const [analysisData, sentimentTrend] = await Promise.all([
+        this.getNewsAnalysisData(articleIds),
+        this.calculateSentimentTrend("1h"),
+      ]);
+
+      // Build enriched NewsContext
+      const newsContext: NewsContext = {
+        headlines,
+        sentiment: analysisData?.avgSentimentScore ?? 0,
+      };
+
+      // Add enriched fields if analysis data is available
+      if (analysisData) {
+        if (analysisData.keyPoints.length > 0) {
+          newsContext.keyPoints = analysisData.keyPoints;
+        }
+        if (analysisData.recommendations.length > 0) {
+          newsContext.recommendations = analysisData.recommendations;
+        }
+        if (analysisData.affectedAssets.length > 0) {
+          newsContext.affectedAssets = analysisData.affectedAssets;
+        }
+      }
+
+      // Add sentiment trend if calculated
+      if (sentimentTrend) {
+        newsContext.sentimentTrend = sentimentTrend;
+      }
+
+      this.log.debug("News context built", {
+        headlineCount: headlines.length,
+        hasAnalysis: analysisData !== null,
+        hasTrend: sentimentTrend !== null,
+        sentiment: newsContext.sentiment.toFixed(2),
+        keyPointCount: newsContext.keyPoints?.length ?? 0,
+        recommendationCount: newsContext.recommendations?.length ?? 0,
+        affectedAssetCount: newsContext.affectedAssets?.length ?? 0,
+      });
+
+      return newsContext;
+    } catch (error) {
+      this.log.error("Failed to build news context", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      // Return minimal context on error rather than undefined
+      // This ensures agent can still operate with basic fallback
+      return {
+        headlines: [],
+        sentiment: 0,
+      };
     }
   }
 }
