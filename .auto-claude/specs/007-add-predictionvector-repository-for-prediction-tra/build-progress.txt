@@ -15,7 +15,8 @@ Creating PredictionVector schema and repository to manage agent prediction vecto
 - ✅ Subtask 2.1: Base structure created
 - ✅ Subtask 2.2: CRUD methods implemented
 - ✅ Subtask 2.3: findAll with filters and pagination
-- ⏳ Subtask 2.4: Status lifecycle methods (next)
+- ✅ Subtask 2.4: Status lifecycle methods (markAsChecked, resolve)
+- ⏳ Subtask 2.5: Analytics methods (next)
 
 ## Discoveries
 
@@ -47,11 +48,11 @@ Creating PredictionVector schema and repository to manage agent prediction vecto
   - ✅ 1.2: Create predictionVector table
   - ✅ 1.3: Add relations to agent and predictionMarket
 
-- **Phase 2**: Repository Implementation (⏳ In Progress - 3/6 complete)
+- **Phase 2**: Repository Implementation (⏳ In Progress - 4/6 complete)
   - ✅ 2.1: Base structure and types
   - ✅ 2.2: CRUD methods (findById, findByAgent, findByMarket, create, update, delete)
   - ✅ 2.3: Filters and pagination (findAll with comprehensive filters)
-  - ⏳ 2.4: Status lifecycle methods (markAsChecked, resolve)
+  - ✅ 2.4: Status lifecycle methods (markAsChecked, resolve)
   - ⏳ 2.5: Analytics methods (accuracy tracking)
   - ⏳ 2.6: Index exports
 
@@ -60,6 +61,24 @@ Creating PredictionVector schema and repository to manage agent prediction vecto
   - Biome lint
 
 ## Recent Updates (2026-01-07)
+
+### Subtask 2.4 Completed
+- Implemented `markAsChecked(id)` method for status lifecycle management
+  - Increments checkCount by 1
+  - Sets checkedAt timestamp to current time
+  - Updates status to 'checked'
+  - Returns updated vector or null if not found
+- Implemented `resolve(id, outcome: boolean)` method for prediction resolution
+  - Calculates accuracy: 1.00 if prediction matches outcome, 0.00 otherwise
+  - Outcome boolean: true = "yes", false = "no"
+  - Sets resolvedAt timestamp to current time
+  - Updates status to 'resolved'
+  - Returns updated vector or null if not found
+- Both methods follow repository patterns:
+  - Check existence with findById first
+  - Use update().set().where().returning() for atomic updates
+  - Return null if record not found
+  - Proper type annotations throughout
 
 ### Subtask 2.3 Completed
 - Implemented `findAll()` method with comprehensive filtering
@@ -70,7 +89,7 @@ Creating PredictionVector schema and repository to manage agent prediction vecto
 - Parallel execution of data and count queries for performance
 
 ## Next Steps
-Continue with subtask 2.4: Implement status lifecycle methods (markAsChecked, resolve)
+Continue with subtask 2.5: Implement analytics methods (getAgentAccuracy, getAccuracyByConfidenceRange, getAgentStats)
 
 ---
 Last Updated: 2026-01-07
