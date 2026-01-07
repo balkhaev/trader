@@ -19,11 +19,32 @@
       "Read(/Users/balkhaev/mycode/trader/.worktrees/001-/.auto-claude/specs/001-/**)",
       "Write(/Users/balkhaev/mycode/trader/.worktrees/001-/.auto-claude/specs/001-/**)",
       "Edit(/Users/balkhaev/mycode/trader/.worktrees/001-/.auto-claude/specs/001-/**)",
+      "Read(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Write(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Edit(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Glob(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Grep(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Read(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/.auto-claude/specs/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Write(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/.auto-claude/specs/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Edit(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/.auto-claude/specs/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Read(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Write(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Edit(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Glob(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Grep(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Read(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/.auto-claude/specs/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Write(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/.auto-claude/specs/015-split-large-executor-service-ts-into-focused-modul/**)",
+      "Edit(/Users/balkhaev/mycode/trader/.worktrees/015-split-large-executor-service-ts-into-focused-modul/.auto-claude/specs/015-split-large-executor-service-ts-into-focused-modul/**)",
       "Bash(*)",
       "WebFetch(*)",
       "WebSearch(*)",
       "mcp__context7__resolve-library-id(*)",
-      "mcp__context7__get-library-docs(*)"
+      "mcp__context7__get-library-docs(*)",
+      "mcp__graphiti-memory__search_nodes(*)",
+      "mcp__graphiti-memory__search_facts(*)",
+      "mcp__graphiti-memory__add_episode(*)",
+      "mcp__graphiti-memory__get_episodes(*)",
+      "mcp__graphiti-memory__get_entity_edge(*)"
     ]
   }
 }
