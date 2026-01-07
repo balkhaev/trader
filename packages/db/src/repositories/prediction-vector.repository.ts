@@ -138,6 +138,48 @@ class PredictionVectorRepository extends BaseRepository<
   async delete(id: string): Promise<void> {
     await this.db.delete(predictionVector).where(eq(predictionVector.id, id));
   }
+
+  async markAsChecked(id: string): Promise<PredictionVector | null> {
+    const existing = await this.findById(id);
+    if (!existing) return null;
+
+    const [updated] = await this.db
+      .update(predictionVector)
+      .set({
+        checkCount: existing.checkCount + 1,
+        checkedAt: new Date(),
+        status: "checked",
+      })
+      .where(eq(predictionVector.id, id))
+      .returning();
+    return updated ?? null;
+  }
+
+  async resolve(
+    id: string,
+    outcome: boolean
+  ): Promise<PredictionVector | null> {
+    const existing = await this.findById(id);
+    if (!existing) return null;
+
+    // Calculate accuracy: 1.00 if prediction matches outcome, 0.00 if not
+    // prediction is "yes" or "no", outcome is boolean (true = yes, false = no)
+    const predictionMatchesOutcome =
+      (existing.prediction === "yes" && outcome === true) ||
+      (existing.prediction === "no" && outcome === false);
+    const accuracy = predictionMatchesOutcome ? "1.00" : "0.00";
+
+    const [updated] = await this.db
+      .update(predictionVector)
+      .set({
+        accuracy,
+        resolvedAt: new Date(),
+        status: "resolved",
+      })
+      .where(eq(predictionVector.id, id))
+      .returning();
+    return updated ?? null;
+  }
 }
 
 export const predictionVectorRepository = new PredictionVectorRepository();
