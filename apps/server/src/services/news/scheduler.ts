@@ -10,7 +10,7 @@ import type { ParsedArticle, RealtimeStatus } from "./types";
 import { newsWebSocketServer } from "./websocket/server";
 
 // Интервалы в миллисекундах
-const FETCH_INTERVAL = 5 * 60 * 1000; // 5 минут
+const FETCH_INTERVAL = 2 * 60 * 1000; // 2 минуты
 const ANALYZE_INTERVAL = 60 * 1000; // 1 минута
 
 let fetchTimer: ReturnType<typeof setInterval> | null = null;
@@ -43,7 +43,7 @@ export const newsScheduler = {
     console.log("[NewsScheduler] Starting...");
     isRunning = true;
 
-    // Фетч новостей каждые 5 минут (только для RSS источников)
+    // Фетч новостей каждые 2 минуты (только для RSS источников)
     fetchTimer = setInterval(async () => {
       try {
         console.log("[NewsScheduler] Fetching news from RSS sources...");

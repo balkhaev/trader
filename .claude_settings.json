@@ -1,0 +1,34 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read(./**)",
+      "Write(./**)",
+      "Edit(./**)",
+      "Glob(./**)",
+      "Grep(./**)",
+      "Read(/Users/balkhaev/mycode/trader/.worktrees/001-/**)",
+      "Write(/Users/balkhaev/mycode/trader/.worktrees/001-/**)",
+      "Edit(/Users/balkhaev/mycode/trader/.worktrees/001-/**)",
+      "Glob(/Users/balkhaev/mycode/trader/.worktrees/001-/**)",
+      "Grep(/Users/balkhaev/mycode/trader/.worktrees/001-/**)",
+      "Read(/Users/balkhaev/mycode/trader/.worktrees/001-/.auto-claude/specs/001-/**)",
+      "Write(/Users/balkhaev/mycode/trader/.worktrees/001-/.auto-claude/specs/001-/**)",
+      "Edit(/Users/balkhaev/mycode/trader/.worktrees/001-/.auto-claude/specs/001-/**)",
+      "Bash(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "mcp__context7__resolve-library-id(*)",
+      "mcp__context7__get-library-docs(*)",
+      "mcp__graphiti-memory__search_nodes(*)",
+      "mcp__graphiti-memory__search_facts(*)",
+      "mcp__graphiti-memory__add_episode(*)",
+      "mcp__graphiti-memory__get_episodes(*)",
+      "mcp__graphiti-memory__get_entity_edge(*)"
+    ]
+  }
+}

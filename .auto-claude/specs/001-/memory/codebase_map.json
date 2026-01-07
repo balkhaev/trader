@@ -1,0 +1,10 @@
+{
+  "discovered_files": {
+    "apps/server/src/services/agent/executor/types.ts": {
+      "description": "New types file containing NewsContext interface with enhanced fields (keyPoints, recommendations, affectedAssets, sentimentTrend), supporting types (NewsRecommendation, AffectedAsset, SentimentTrend), TradeDecision, and ExecutorContext interfaces for agent execution",
+      "category": "types",
+      "discovered_at": "2026-01-07T14:26:08.704726+00:00"
+    }
+  },
+  "last_updated": "2026-01-07T14:26:08.704743+00:00"
+}

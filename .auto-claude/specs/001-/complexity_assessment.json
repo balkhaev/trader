@@ -1,0 +1,107 @@
+{
+  "complexity": "standard",
+  "workflow_type": "feature",
+  "confidence": 0.85,
+  "reasoning": "The codebase already has a comprehensive news service (RSS, Telegram, Web Scraper, Crawl4AI, Reddit parsers) and agent context builder with news integration. The task is to ensure continuous news parsing and enhance the news-to-agent data flow. No new external integrations or infrastructure changes are needed - it's primarily about configuration, orchestration, and potential interval optimizations.",
+
+  "analysis": {
+    "scope": {
+      "estimated_files": 6,
+      "estimated_services": 2,
+      "is_cross_cutting": false,
+      "notes": "Changes will focus on apps/server news scheduler, agent context-builder, and potentially server startup. Existing patterns are well-established."
+    },
+    "integrations": {
+      "external_services": [],
+      "new_dependencies": [],
+      "research_needed": false,
+      "notes": "All news sources (RSS, Telegram, web scrapers, etc.) are already integrated. No new external APIs needed."
+    },
+    "infrastructure": {
+      "docker_changes": false,
+      "database_changes": false,
+      "config_changes": true,
+      "notes": "May need to add/modify .env variables for scheduler intervals. Existing database schema (newsArticle, newsAnalysis) is sufficient."
+    },
+    "knowledge": {
+      "patterns_exist": true,
+      "research_required": false,
+      "unfamiliar_tech": [],
+      "notes": "Full news service, scheduler, context-builder patterns already exist. Task is enhancement of existing flow, not new implementation."
+    },
+    "risk": {
+      "level": "low",
+      "concerns": [
+        "Performance impact of more frequent polling",
+        "Rate limiting on external news sources",
+        "Resource usage with always-running real-time mode"
+      ],
+      "notes": "Risk is manageable since existing scheduler already handles errors gracefully. Need to consider API rate limits for news sources."
+    }
+  },
+
+  "recommended_phases": [
+    "discovery",
+    "requirements",
+    "context",
+    "spec_writing",
+    "planning",
+    "validation"
+  ],
+
+  "flags": {
+    "needs_research": false,
+    "needs_self_critique": false,
+    "needs_infrastructure_setup": false
+  },
+
+  "validation_recommendations": {
+    "risk_level": "medium",
+    "skip_validation": false,
+    "minimal_mode": false,
+    "test_types_required": ["unit", "integration"],
+    "security_scan_required": false,
+    "staging_deployment_required": false,
+    "reasoning": "Changes to scheduler timing and agent data flow require integration tests to verify news reaches agents correctly. No security concerns as no auth/payment code is touched."
+  },
+
+  "existing_infrastructure": {
+    "news_service": {
+      "location": "apps/server/src/services/news/",
+      "features": [
+        "RSS parser with 5-min intervals",
+        "Telegram parser with real-time watching",
+        "Web scraper with polling",
+        "Crawl4AI parser",
+        "Reddit parser",
+        "LLM-based sentiment analysis (1-min intervals)",
+        "Deduplication service",
+        "WebSocket server for real-time updates",
+        "Scheduler with configurable intervals"
+      ]
+    },
+    "agent_context": {
+      "location": "apps/server/src/services/agent/executor/context-builder.service.ts",
+      "current_news_integration": "getNewsContext() provides headlines and sentiment from canonical stories or raw articles when agent.strategy.dataSources includes 'news'"
+    },
+    "scheduler_intervals": {
+      "FETCH_INTERVAL": "5 minutes (RSS)",
+      "ANALYZE_INTERVAL": "1 minute",
+      "TAG_EXTRACT_INTERVAL": "2 minutes",
+      "TAG_METRICS_INTERVAL": "30 minutes",
+      "GRAPH_REBUILD_INTERVAL": "1 hour",
+      "ANOMALY_SCAN_INTERVAL": "15 minutes"
+    }
+  },
+
+  "implementation_considerations": [
+    "Ensure news scheduler auto-starts with server (currently may require manual trigger)",
+    "Consider enabling real-time mode by default for web_scraper/telegram sources",
+    "Optimize fetch intervals based on source type (realtime vs polling)",
+    "Enhance NewsContext to include analysis results (sentiment scores, key points, market implications)",
+    "Add news-driven event emission for proactive agent updates",
+    "Consider adding news priority/urgency classification for agent decision making"
+  ],
+
+  "created_at": "2025-01-07T12:00:00Z"
+}

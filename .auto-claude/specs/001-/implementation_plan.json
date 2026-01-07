@@ -1,0 +1,414 @@
+{
+  "feature": "Enhance News Analysis Integration for Agent Input System",
+  "workflow_type": "feature",
+  "workflow_rationale": "This is a feature enhancement that extends existing functionality. The news service, scheduler, and agent context builder already exist - we're enhancing integration depth and data richness rather than building from scratch.",
+  "phases": [
+    {
+      "id": "phase-1-types",
+      "name": "Type Definitions",
+      "type": "implementation",
+      "description": "Extend NewsContext interface with analysis fields",
+      "depends_on": [],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-1-1",
+          "description": "Extend NewsContext interface with keyPoints, recommendations, affectedAssets, and sentimentTrend fields",
+          "service": "server",
+          "files_to_modify": [
+            "apps/server/src/services/agent/executor/types.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "apps/server/src/services/agent/executor/types.ts"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "cd /Users/balkhaev/mycode/trader && bun run check-types 2>&1 | head -20",
+            "expected": "No type errors"
+          },
+          "status": "completed",
+          "implementation_details": {
+            "add_fields": {
+              "keyPoints": "string[] | undefined",
+              "recommendations": "{ action: 'buy' | 'sell' | 'hold' | 'monitor'; symbols: string[]; reasoning: string; }[] | undefined",
+              "affectedAssets": "{ symbol: string; impact: 'positive' | 'negative' | 'neutral'; confidence: number; }[] | undefined",
+              "sentimentTrend": "{ direction: 'improving' | 'declining' | 'stable'; change: number; period: '1h' | '24h'; } | undefined"
+            }
+          },
+          "notes": "NewsContext interface extended with keyPoints, recommendations, affectedAssets, and sentimentTrend fields. Supporting types (NewsRecommendation, AffectedAsset, SentimentTrend) also added. File already committed in 9289fa4.",
+          "updated_at": "2026-01-07T14:26:03.847276+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-2-event-emitter",
+      "name": "Event Emitter Enhancement",
+      "type": "implementation",
+      "description": "Add high-impact news event emission for agent notification",
+      "depends_on": [],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-2-1",
+          "description": "Add high-impact news event type and emission method to NewsEventEmitter",
+          "service": "server",
+          "files_to_modify": [
+            "apps/server/src/services/news/realtime/event-emitter.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "apps/server/src/services/news/realtime/event-emitter.ts"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "cd /Users/balkhaev/mycode/trader && bun run check-types 2>&1 | head -20",
+            "expected": "No type errors"
+          },
+          "status": "completed",
+          "implementation_details": {
+            "new_event": "news:high-impact",
+            "payload": {
+              "articleId": "string",
+              "title": "string",
+              "sentiment": "string",
+              "impactScore": "number",
+              "affectedAssets": "array"
+            },
+            "methods_to_add": [
+              "emitHighImpactNews",
+              "onHighImpactNews"
+            ]
+          },
+          "notes": "Added HighImpactNewsPayload interface, 'news:high-impact' event type, emitHighImpactNews() and onHighImpactNews() methods to NewsEventEmitter. Committed as bd2757e.",
+          "updated_at": "2026-01-07T14:27:32.121931+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-3-scheduler",
+      "name": "Scheduler Update",
+      "type": "implementation",
+      "description": "Reduce fetch interval and add high-impact event emission",
+      "depends_on": [
+        "phase-2-event-emitter"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-3-1",
+          "description": "Reduce FETCH_INTERVAL from 5 minutes to 2 minutes",
+          "service": "server",
+          "files_to_modify": [
+            "apps/server/src/services/news/scheduler.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "cd /Users/balkhaev/mycode/trader && grep -n 'FETCH_INTERVAL' apps/server/src/services/news/scheduler.ts",
+            "expected": "FETCH_INTERVAL = 2 * 60 * 1000"
+          },
+          "status": "pending",
+          "implementation_details": {
+            "change": "const FETCH_INTERVAL = 5 * 60 * 1000 \u2192 const FETCH_INTERVAL = 2 * 60 * 1000"
+          }
+        },
+        {
+          "id": "subtask-3-2",
+          "description": "Add high-impact news event emission in analyzeUnprocessedArticles when impactScore > 0.7",
+          "service": "server",
+          "files_to_modify": [
+            "apps/server/src/services/news/scheduler.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "apps/server/src/services/news/scheduler.ts"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "cd /Users/balkhaev/mycode/trader && grep -n 'emitHighImpactNews' apps/server/src/services/news/scheduler.ts",
+            "expected": "newsEventEmitter.emitHighImpactNews"
+          },
+          "status": "pending",
+          "implementation_details": {
+            "location": "After saving analysis result in analyzeUnprocessedArticles",
+            "condition": "if (llmResponse.result.impactScore > 0.7)",
+            "emit": "newsEventEmitter.emitHighImpactNews({ articleId, title, sentiment, impactScore, affectedAssets })"
+          }
+        }
+      ]
+    },
+    {
+      "id": "phase-4-context-builder",
+      "name": "Context Builder Enhancement",
+      "type": "implementation",
+      "description": "Enrich getNewsContext() to aggregate analysis data for agents",
+      "depends_on": [
+        "phase-1-types"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-4-1",
+          "description": "Create helper function to aggregate analysis data from newsAnalysis table",
+          "service": "server",
+          "files_to_modify": [
+            "apps/server/src/services/agent/executor/context-builder.service.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "apps/server/src/services/agent/executor/context-builder.service.ts"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "cd /Users/balkhaev/mycode/trader && bun run check-types 2>&1 | head -20",
+            "expected": "No type errors"
+          },
+          "status": "pending",
+          "implementation_details": {
+            "new_method": "getNewsAnalysisData(articleIds: string[]): Promise<{ keyPoints, recommendations, affectedAssets, avgImpactScore }>",
+            "data_source": "Query newsAnalysis table where articleId in ids and status = 'completed'"
+          }
+        },
+        {
+          "id": "subtask-4-2",
+          "description": "Implement sentiment trend calculation comparing current vs previous period",
+          "service": "server",
+          "files_to_modify": [
+            "apps/server/src/services/agent/executor/context-builder.service.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "cd /Users/balkhaev/mycode/trader && grep -n 'sentimentTrend' apps/server/src/services/agent/executor/context-builder.service.ts",
+            "expected": "sentimentTrend calculation found"
+          },
+          "status": "pending",
+          "implementation_details": {
+            "new_method": "calculateSentimentTrend(period: '1h' | '24h'): Promise<{ direction, change, period }>",
+            "algorithm": "Compare avg sentiment of current period vs previous period, calculate direction and change"
+          }
+        },
+        {
+          "id": "subtask-4-3",
+          "description": "Update getNewsContext() to return enriched NewsContext with all new fields",
+          "service": "server",
+          "files_to_modify": [
+            "apps/server/src/services/agent/executor/context-builder.service.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "command",
+            "command": "cd /Users/balkhaev/mycode/trader && bun run check-types 2>&1 | head -20",
+            "expected": "No type errors"
+          },
+          "status": "pending",
+          "implementation_details": {
+            "return_value": {
+              "headlines": "from canonical stories",
+              "sentiment": "average sentiment",
+              "keyPoints": "aggregated from analysis",
+              "recommendations": "aggregated from analysis",
+              "affectedAssets": "aggregated from analysis",
+              "sentimentTrend": "calculated trend"
+            },
+            "fallback": "If no analyzed news, return raw headlines with neutral sentiment"
+          }
+        }
+      ]
+    },
+    {
+      "id": "phase-5-prompt-format",
+      "name": "Prompt Formatting Update",
+      "type": "implementation",
+      "description": "Update executor.service.ts to format enriched news data in agent prompt",
+      "depends_on": [
+        "phase-4-context-builder"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-5-1",
+          "description": "Update news context formatting in getTradeDecision to include enriched data",
+          "service": "server",
+          "files_to_modify": [
+            "apps/server/src/services/agent/executor.service.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "apps/server/src/services/agent/executor.service.ts"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "cd /Users/balkhaev/mycode/trader && grep -A5 'newsContext' apps/server/src/services/agent/executor.service.ts | grep -E 'keyPoints|recommendations|sentimentTrend'",
+            "expected": "Enriched news fields found in formatting"
+          },
+          "status": "pending",
+          "implementation_details": {
+            "format": "Update {newsContext} replacement to include keyPoints, recommendations, affectedAssets, sentimentTrend",
+            "example_output": "Headlines: ...\nSentiment: X (improving over 1h)\nKey Points: ...\nRecommendations: ...\nAffected Assets: ..."
+          }
+        }
+      ]
+    },
+    {
+      "id": "phase-6-integration",
+      "name": "Integration Verification",
+      "type": "integration",
+      "description": "Verify all components work together and news data flows correctly to agents",
+      "depends_on": [
+        "phase-3-scheduler",
+        "phase-5-prompt-format"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-6-1",
+          "description": "Verify news scheduler runs with 2-minute interval",
+          "all_services": true,
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "api",
+            "method": "GET",
+            "url": "http://localhost:3000/api/news/scheduler/status",
+            "expected_status": 200
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-6-2",
+          "description": "Verify enriched news context is available in agent context builder",
+          "all_services": true,
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "manual",
+            "instructions": "Check server logs for 'Context built' entries showing hasNews: true with enriched data"
+          },
+          "status": "pending"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_phases": 6,
+    "total_subtasks": 10,
+    "services_involved": [
+      "server"
+    ],
+    "parallelism": {
+      "max_parallel_phases": 2,
+      "parallel_groups": [
+        {
+          "phases": [
+            "phase-1-types",
+            "phase-2-event-emitter"
+          ],
+          "reason": "Both have no dependencies and modify different files"
+        }
+      ],
+      "recommended_workers": 1,
+      "speedup_estimate": "1.2x faster than sequential (limited parallelism)"
+    },
+    "startup_command": "bun dev"
+  },
+  "verification_strategy": {
+    "risk_level": "medium",
+    "skip_validation": false,
+    "test_creation_phase": "post_implementation",
+    "test_types_required": [
+      "unit",
+      "integration"
+    ],
+    "security_scanning_required": false,
+    "staging_deployment_required": false,
+    "acceptance_criteria": [
+      "News fetch interval reduced to 2 minutes",
+      "NewsContext interface includes enriched fields",
+      "getNewsContext() returns analysis data when available",
+      "Agent prompts show enriched news data",
+      "High-impact news triggers event emission",
+      "No type errors in build",
+      "Server starts with news scheduler running automatically"
+    ],
+    "verification_steps": [
+      {
+        "name": "Type Check",
+        "command": "cd /Users/balkhaev/mycode/trader && bun run check-types",
+        "expected_outcome": "No type errors",
+        "type": "build",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Lint Check",
+        "command": "cd /Users/balkhaev/mycode/trader && bun run check",
+        "expected_outcome": "No linting errors",
+        "type": "lint",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Server Starts",
+        "command": "curl http://localhost:3000/health",
+        "expected_outcome": "{ status: 'ok' }",
+        "type": "integration",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Scheduler Status",
+        "command": "curl http://localhost:3000/api/news/scheduler/status",
+        "expected_outcome": "{ isRunning: true }",
+        "type": "integration",
+        "required": true,
+        "blocking": true
+      }
+    ],
+    "reasoning": "Medium risk change requires type checking and integration verification. Changes to scheduler timing and agent data flow require verification that news reaches agents correctly."
+  },
+  "qa_acceptance": {
+    "unit_tests": {
+      "required": false,
+      "commands": [],
+      "minimum_coverage": null,
+      "notes": "No existing unit test infrastructure in this codebase"
+    },
+    "integration_tests": {
+      "required": true,
+      "commands": [
+        "curl http://localhost:3000/api/news/scheduler/status"
+      ],
+      "services_to_test": [
+        "server"
+      ]
+    },
+    "e2e_tests": {
+      "required": false,
+      "commands": [],
+      "flows": []
+    },
+    "browser_verification": {
+      "required": false,
+      "pages": []
+    },
+    "database_verification": {
+      "required": true,
+      "checks": [
+        "newsAnalysis records exist with status='completed'"
+      ]
+    }
+  },
+  "qa_signoff": null,
+  "status": "in_progress",
+  "planStatus": "in_progress",
+  "updated_at": "2026-01-07T14:23:53.683Z",
+  "recoveryNote": "Task recovered from stuck state at 2026-01-07T14:23:53.653Z",
+  "last_updated": "2026-01-07T14:27:32.121943+00:00"
+}
