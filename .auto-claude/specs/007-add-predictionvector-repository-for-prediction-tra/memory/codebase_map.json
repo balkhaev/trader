@@ -1,0 +1,15 @@
+{
+  "discovered_files": {
+    "packages/db/src/repositories/base.repository.ts": {
+      "description": "BaseRepository class provides paginate() helper and getOrderBy() method. Repositories extend this class with table-specific CRUD and query methods.",
+      "category": "pattern",
+      "discovered_at": "2026-01-07T14:40:28.139405+00:00"
+    },
+    "packages/db/src/schema/prediction-market.ts": {
+      "description": "Contains predictionMarket, marketPosition, marketTrade tables. Has marketPositionSideEnum (yes/no) that can be reused for PredictionVector prediction field.",
+      "category": "schema",
+      "discovered_at": "2026-01-07T14:40:28.164709+00:00"
+    }
+  },
+  "last_updated": "2026-01-07T14:40:28.164723+00:00"
+}

@@ -12,6 +12,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
+import { predictionVector } from "./prediction-market";
 
 // ==================== ENUMS ====================
 
@@ -242,6 +243,7 @@ export const agentRelations = relations(agent, ({ one, many }) => ({
   }),
   allocations: many(agentAllocation),
   trades: many(agentTrade),
+  vectors: many(predictionVector),
 }));
 
 export const agentAllocationRelations = relations(

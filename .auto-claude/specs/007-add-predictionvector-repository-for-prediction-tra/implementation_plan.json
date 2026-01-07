@@ -1,0 +1,193 @@
+{
+  "feature": "Add PredictionVector Repository for prediction tracking",
+  "description": "Create PredictionVector schema and repository to manage agent prediction vectors with analytics capabilities for measuring prediction accuracy over time.",
+  "created_at": "2026-01-07T14:32:57.424Z",
+  "updated_at": "2026-01-07T14:37:15.481Z",
+  "status": "in_progress",
+  "planStatus": "approved",
+  "spec_file": "spec.md",
+  "workflow_type": "development",
+  "services_involved": [
+    "@trader/db"
+  ],
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Schema Definition",
+      "description": "Create PredictionVector schema with tracking fields",
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "Add predictionVectorStatusEnum to schema",
+          "description": "Create pgEnum for prediction vector statuses: pending (awaiting check), checked (verified by system), resolved (outcome determined).",
+          "status": "completed",
+          "dependencies": [],
+          "files": [
+            "packages/db/src/schema/prediction-market.ts"
+          ],
+          "estimated_complexity": "low",
+          "notes": "predictionVectorStatusEnum already exists in packages/db/src/schema/prediction-market.ts with all three required statuses: pending, checked, resolved. No changes needed.",
+          "updated_at": "2026-01-07T16:58:00.319880+00:00"
+        },
+        {
+          "id": "1.2",
+          "title": "Create predictionVector table schema",
+          "description": "Add predictionVector table to prediction-market.ts schema with fields: id, agentId, marketId, prediction (yes/no using existing marketPositionSideEnum), status, confidence (0-1 numeric), accuracy (null until resolved), checkCount, reasoning, predictedAt, checkedAt, resolvedAt, createdAt, updatedAt. Include appropriate indexes for agentId, marketId, status, predictedAt.",
+          "status": "completed",
+          "dependencies": [
+            "1.1"
+          ],
+          "files": [
+            "packages/db/src/schema/prediction-market.ts"
+          ],
+          "estimated_complexity": "medium",
+          "notes": "Successfully added predictionVector table to packages/db/src/schema/prediction-market.ts with all required fields: id, agentId, marketId, prediction (using marketPositionSideEnum), status (using predictionVectorStatusEnum), confidence (0-1 numeric), accuracy (nullable), checkCount (integer), reasoning, predictedAt, checkedAt, resolvedAt, createdAt, updatedAt. Included indexes for agentId, marketId, status, and predictedAt as specified.",
+          "updated_at": "2026-01-07T17:01:36.007331+00:00"
+        },
+        {
+          "id": "1.3",
+          "title": "Add predictionVector relations",
+          "description": "Create relations linking predictionVector to agent and predictionMarket tables. Update existing agent and predictionMarket relations to include vectors.",
+          "status": "pending",
+          "dependencies": [
+            "1.2"
+          ],
+          "files": [
+            "packages/db/src/schema/prediction-market.ts"
+          ],
+          "estimated_complexity": "low"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Repository Implementation",
+      "description": "Implement PredictionVectorRepository with CRUD and analytics methods",
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "Create prediction-vector.repository.ts base structure",
+          "description": "Create new repository file extending BaseRepository with type exports: PredictionVector, PredictionVectorStatus, PredictionVectorFilters interface. Follow patterns from agent.repository.ts.",
+          "status": "pending",
+          "dependencies": [
+            "1.3"
+          ],
+          "files": [
+            "packages/db/src/repositories/prediction-vector.repository.ts"
+          ],
+          "estimated_complexity": "low"
+        },
+        {
+          "id": "2.2",
+          "title": "Implement basic CRUD methods",
+          "description": "Add methods: findById, findByAgent(agentId), findByMarket(marketId), create(data), update(id, data), delete(id).",
+          "status": "pending",
+          "dependencies": [
+            "2.1"
+          ],
+          "files": [
+            "packages/db/src/repositories/prediction-vector.repository.ts"
+          ],
+          "estimated_complexity": "medium"
+        },
+        {
+          "id": "2.3",
+          "title": "Implement findAll with filters and pagination",
+          "description": "Add findAll method with PredictionVectorFilters: agentId, marketId, status, confidenceMin, confidenceMax, predictedAfter, predictedBefore. Include PaginatedResult support using BaseRepository.paginate pattern.",
+          "status": "pending",
+          "dependencies": [
+            "2.2"
+          ],
+          "files": [
+            "packages/db/src/repositories/prediction-vector.repository.ts"
+          ],
+          "estimated_complexity": "medium"
+        },
+        {
+          "id": "2.4",
+          "title": "Implement status lifecycle methods",
+          "description": "Add methods: markAsChecked(id) - increments checkCount and sets checkedAt timestamp; resolve(id, outcome: boolean) - calculates accuracy based on prediction vs outcome, sets resolvedAt and status='resolved'.",
+          "status": "pending",
+          "dependencies": [
+            "2.2"
+          ],
+          "files": [
+            "packages/db/src/repositories/prediction-vector.repository.ts"
+          ],
+          "estimated_complexity": "medium"
+        },
+        {
+          "id": "2.5",
+          "title": "Implement accuracy analytics methods",
+          "description": "Add analytics methods: getAgentAccuracy(agentId) - returns avg accuracy for resolved predictions; getAccuracyByConfidenceRange(agentId?) - buckets predictions by confidence (0-0.5, 0.5-0.7, 0.7-0.9, 0.9-1.0) with accuracy for each; getAgentStats(agentId) - returns {totalPredictions, resolvedPredictions, avgAccuracy, avgConfidence, calibrationScore}.",
+          "status": "pending",
+          "dependencies": [
+            "2.2"
+          ],
+          "files": [
+            "packages/db/src/repositories/prediction-vector.repository.ts"
+          ],
+          "estimated_complexity": "high"
+        },
+        {
+          "id": "2.6",
+          "title": "Export repository from index.ts",
+          "description": "Add predictionVectorRepository instance export and all type exports (PredictionVector, PredictionVectorStatus, PredictionVectorFilters, AgentPredictionStats) to packages/db/src/repositories/index.ts.",
+          "status": "pending",
+          "dependencies": [
+            "2.5"
+          ],
+          "files": [
+            "packages/db/src/repositories/index.ts"
+          ],
+          "estimated_complexity": "low"
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Verification",
+      "description": "Verify implementation with type checking and linting",
+      "subtasks": [
+        {
+          "id": "3.1",
+          "title": "Run TypeScript type check",
+          "description": "Execute 'bun check-types' to verify all types are correctly defined and no TypeScript errors exist.",
+          "status": "pending",
+          "dependencies": [
+            "2.6"
+          ],
+          "files": [],
+          "estimated_complexity": "low"
+        },
+        {
+          "id": "3.2",
+          "title": "Run Biome linter and formatter",
+          "description": "Execute 'bun check' to ensure code follows project style guidelines.",
+          "status": "pending",
+          "dependencies": [
+            "3.1"
+          ],
+          "files": [],
+          "estimated_complexity": "low"
+        }
+      ]
+    }
+  ],
+  "final_acceptance": [
+    "PredictionVector schema exists with all required fields and indexes",
+    "Repository exports are available from @trader/db",
+    "All CRUD operations work correctly",
+    "Analytics methods return proper accuracy metrics",
+    "TypeScript compiles without errors",
+    "Code passes Biome linting"
+  ],
+  "qa_signoff": {
+    "status": "pending",
+    "tests_passed": null,
+    "issues": null
+  },
+  "total_subtasks": 11,
+  "completed_subtasks": 0,
+  "last_updated": "2026-01-07T17:01:36.007343+00:00"
+}

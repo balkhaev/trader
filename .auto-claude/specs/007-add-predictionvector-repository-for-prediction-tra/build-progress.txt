@@ -1,0 +1,59 @@
+# Build Progress: PredictionVector Repository
+
+## Status: Phase 1 - Schema Definition (In Progress)
+
+## Summary
+Creating PredictionVector schema and repository to manage agent prediction vectors with analytics capabilities for measuring prediction accuracy over time.
+
+## Progress
+- ✅ Subtask 1.1: predictionVectorStatusEnum (already existed)
+- ✅ Subtask 1.2: predictionVector table created with all required fields and indexes
+- ⏳ Subtask 1.3: Add relations (next)
+
+## Discoveries
+
+### Codebase Analysis (2026-01-07)
+- **PredictionVector schema does NOT exist yet** - contrary to spec assumption, the schema needs to be created
+- Repository pattern follows BaseRepository class in `packages/db/src/repositories/base.repository.ts`
+- Existing repositories: agent, market, news, prediction-market, signal
+- prediction-market.ts already has enums that can be reused (marketPositionSideEnum for yes/no)
+- Schema should be added to `packages/db/src/schema/prediction-market.ts` alongside related tables
+
+### Key Patterns Identified
+- Type exports use `InferSelectModel<typeof table>`
+- Filters extend `PaginationParams` interface
+- Repositories extend `BaseRepository<typeof table>`
+- Analytics methods follow pattern from signal.repository.ts `getStats()`
+- All repositories export singleton instance
+
+### Implementation Details (2026-01-07)
+- Added `predictionVector` table to `packages/db/src/schema/prediction-market.ts`
+- Table includes all required fields: id, agentId, marketId, prediction, confidence, accuracy, checkCount, reasoning, status, predictedAt, checkedAt, resolvedAt, createdAt, updatedAt
+- Used existing enums: marketPositionSideEnum for prediction, predictionVectorStatusEnum for status
+- Added indexes on agentId, marketId, status, predictedAt for query performance
+- Confidence and accuracy use numeric(3,2) for 0.00-1.00 range
+- checkCount uses integer type with default 0
+
+## Implementation Plan
+- **Phase 1**: Schema Definition (3 subtasks)
+  - ✅ 1.1: Add predictionVectorStatusEnum (already existed)
+  - ✅ 1.2: Create predictionVector table
+  - ⏳ 1.3: Add relations to agent and predictionMarket
+
+- **Phase 2**: Repository Implementation (6 subtasks)
+  - Base structure and types
+  - CRUD methods
+  - Filters and pagination
+  - Status lifecycle methods
+  - Analytics methods (accuracy tracking)
+  - Index exports
+
+- **Phase 3**: Verification (2 subtasks)
+  - TypeScript check
+  - Biome lint
+
+## Next Steps
+Continue with subtask 1.3: Add predictionVector relations to agent and predictionMarket tables
+
+---
+Last Updated: 2026-01-07

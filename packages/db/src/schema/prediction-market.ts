@@ -299,6 +299,7 @@ export const predictionMarketRelations = relations(
     }),
     positions: many(marketPosition),
     trades: many(marketTrade),
+    vectors: many(predictionVector),
   })
 );
 
@@ -331,3 +332,17 @@ export const marketTradeRelations = relations(marketTrade, ({ one }) => ({
     references: [agent.id],
   }),
 }));
+
+export const predictionVectorRelations = relations(
+  predictionVector,
+  ({ one }) => ({
+    agent: one(agent, {
+      fields: [predictionVector.agentId],
+      references: [agent.id],
+    }),
+    market: one(predictionMarket, {
+      fields: [predictionVector.marketId],
+      references: [predictionMarket.id],
+    }),
+  })
+);

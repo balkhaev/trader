@@ -1,0 +1,34 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read(./**)",
+      "Write(./**)",
+      "Edit(./**)",
+      "Glob(./**)",
+      "Grep(./**)",
+      "Read(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Write(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Edit(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Glob(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Grep(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Read(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/.auto-claude/specs/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Write(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/.auto-claude/specs/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Edit(/Users/balkhaev/mycode/trader/.worktrees/007-add-predictionvector-repository-for-prediction-tra/.auto-claude/specs/007-add-predictionvector-repository-for-prediction-tra/**)",
+      "Bash(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "mcp__context7__resolve-library-id(*)",
+      "mcp__context7__get-library-docs(*)",
+      "mcp__graphiti-memory__search_nodes(*)",
+      "mcp__graphiti-memory__search_facts(*)",
+      "mcp__graphiti-memory__add_episode(*)",
+      "mcp__graphiti-memory__get_episodes(*)",
+      "mcp__graphiti-memory__get_entity_edge(*)"
+    ]
+  }
+}
