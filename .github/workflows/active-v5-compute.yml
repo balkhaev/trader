@@ -1,0 +1,67 @@
+name: Active research v5 compute
+
+on:
+  push:
+    branches:
+      - agent/active-v5-compute
+    paths:
+      - "research/active_v5_compute/**"
+      - ".github/workflows/active-v5-compute.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "research/active_v5_compute/**"
+      - ".github/workflows/active-v5-compute.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore Binance archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance_v5
+          key: binance-spot-perp-funding-btc-eth-2020-2026-v5
+
+      - name: Reconstruct and verify source
+        run: python research/active_v5_compute/bootstrap.py --extract-only
+
+      - name: Install dependencies
+        run: python -m pip install -r research/active_v5_compute/generated/requirements.txt
+
+      - name: Run deterministic self-test
+        run: python research/active_v5_compute/bootstrap.py --self-test
+
+      - name: Run full Active V5 research
+        run: |
+          python research/active_v5_compute/bootstrap.py \
+            --output artifacts/active_v5 \
+            --cache .cache/binance_v5
+          mkdir -p artifacts/active_v5/source
+          cp research/active_v5_compute/generated/*.py artifacts/active_v5/source/
+          cp research/active_v5_compute/generated/README.md artifacts/active_v5/source/
+          cp research/active_v5_compute/generated/requirements.txt artifacts/active_v5/source/
+          cp research/active_v5_compute/manifest.json artifacts/active_v5/source_payload_manifest.json
+
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-research-v5-compute
+          path: artifacts/active_v5
+          if-no-files-found: warn
+          retention-days: 30
