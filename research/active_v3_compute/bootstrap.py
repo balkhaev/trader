@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parent
 MANIFEST=json.loads((ROOT/'manifest.json').read_text())
 def sha(data: bytes)->str: return hashlib.sha256(data).hexdigest()
 def reconstruct()->Path:
-    parts=sorted((ROOT/'payload').glob('part_*.b64'))
+    parts=sorted((ROOT/'fixed_payload').glob('fixed_*.b64'))
     if len(parts)!=MANIFEST['parts']: raise SystemExit(f"payload part count mismatch: {len(parts)}")
     encoded=b''.join(part.read_bytes().strip() for part in parts)
     if len(encoded)!=MANIFEST['encoded_bytes'] or sha(encoded)!=MANIFEST['encoded_sha256']:
