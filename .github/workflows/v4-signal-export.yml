@@ -1,0 +1,51 @@
+name: Export exact V4 frozen signal
+
+on:
+  push:
+    branches:
+      - agent/v4-signal-export
+    paths:
+      - "research/active_v4_compute/export_signal.py"
+      - ".github/workflows/v4-signal-export.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "research/active_v4_compute/export_signal.py"
+      - ".github/workflows/v4-signal-export.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore exact V4 Binance cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance_v4
+          key: binance-spot-daily-btc-eth-2018-2026-v4
+      - name: Reconstruct and verify original V4 source
+        run: python research/active_v4_compute/bootstrap.py --extract-only
+      - name: Install dependencies
+        run: python -m pip install -r research/active_v4_compute/generated/requirements.txt
+      - name: Export frozen signal and verify metrics
+        run: |
+          python research/active_v4_compute/export_signal.py \
+            --cache .cache/binance_v4 \
+            --output artifacts/v4_signal
+      - name: Upload exact V4 signal artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-v4-frozen-signal
+          path: artifacts/v4_signal
+          retention-days: 30
