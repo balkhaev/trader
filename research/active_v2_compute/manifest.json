@@ -1,0 +1,15 @@
+{
+  "parts": 4,
+  "encoded_bytes": 18832,
+  "encoded_sha256": "140b5786abd17361534494a1885558dcfbda85a2f1554bf9b534fd891c9fc38c",
+  "archive_bytes": 14122,
+  "archive_sha256": "83e3404581328272e6eab520b6466e1b84019b20e914c3b5f13dfbda36606b1b",
+  "source_files": {
+    "config.py": "88cff711cdbd6d502b6250ece6f3dfb2474eb0ad0299fde4008495af91685778",
+    "data.py": "1fc5dcdd92bdce66e534416b18cc667d3de21d774cdcf933b2f1c0ac0bea1ef8",
+    "metrics.py": "efbd05da7a2eafd640e1d6de0c594ca9041da04e573ef906a19a7e3699750345",
+    "rotation.py": "7dd2695502c0d9beb225015a2201c6eceece8b15586dc137879d17d80ddb4c26",
+    "shock.py": "1aff8e166cf6087e1ce5757e92329afd7acabbe69183f4c0c2c11954f08e47af",
+    "run_research.py": "ab3e4221f3b851cdd6915613aca05a6df2049d529dee75bb52ab4c948aefead7"
+  }
+}
