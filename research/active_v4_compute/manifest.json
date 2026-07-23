@@ -1,0 +1,16 @@
+{
+  "parts": 3,
+  "encoded_bytes": 14964,
+  "encoded_sha256": "90c619a8e349abac1189b031c5b8e20e8e309363998d187af15c2947be65a159",
+  "archive_bytes": 11223,
+  "archive_sha256": "59f544555ff961513d328809e196dde8c9ffa2a6480f481b03503e06f59fa8f9",
+  "source_files": {
+    "metrics.py": "b3a6f53bdedf43591593672b17f5f02128c609c59d999c9ef3b2ca37c8f6daa5",
+    "data.py": "79c35a8b1d1698347661c624d6d7e442ed2dbfbb43ba8188d080962225e4f759",
+    "requirements.txt": "d445c2131c221367374eb72f9a9f112dd5648e27aa64edcca4a27cd28f3f18f9",
+    "market.py": "1364abf350123bd608684300f61e2760af4b250e703a97b50a4d76e05fde4c35",
+    "run_research.py": "f2250bb8238f7b6f700e95327065a0f05d270f33950ec807ebd78f51e9837eef",
+    "config.py": "497a9ac4256a39678de754a1c2ea22a3456992a697579b5b93b64288472609f5",
+    "strategy.py": "fad5b80eed8c56b7318aefc4dc3d118d0ac310bbb67c27e518d4f29c9a2a5b29"
+  }
+}
