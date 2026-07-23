@@ -20,7 +20,14 @@ def sha256(data: bytes) -> str:
 
 
 def reconstruct() -> Path:
-    parts = sorted((ROOT / "payload").glob("part_*.b64"))
+    payload_files = MANIFEST.get("payload_files")
+    if payload_files:
+        parts = [ROOT / "payload" / name for name in payload_files]
+    else:
+        parts = sorted((ROOT / "payload").glob("part_*.b64"))
+    missing = [str(part) for part in parts if not part.exists()]
+    if missing:
+        raise SystemExit(f"missing payload parts: {missing}")
     if len(parts) != MANIFEST["parts"]:
         raise SystemExit(f"payload part count mismatch: {len(parts)}")
     encoded = b"".join(part.read_bytes().strip() for part in parts)

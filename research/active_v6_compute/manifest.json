@@ -1,5 +1,5 @@
 {
-  "parts": 8,
+  "parts": 12,
   "encoded_bytes": 21376,
   "encoded_sha256": "ea7fecdfeac69dfe6f53e05d76c53f0a2adaed5d04a87016e57a6fa0c7094e27",
   "archive_bytes": 16030,
@@ -13,5 +13,19 @@
     "strategy.py": "6b435fa3ccc182aba944cd367dcd13333718187d6ba97098d1c7c64d66e6fd27",
     "run_research.py": "c2b50c99688cf4d5f3abd3057a0da9daa7ad0edd614b4d606c4d4d2efa1489d0",
     "requirements.txt": "40a7775f9f27385f94f8f686fcc81e4cca0fc58723fd6a46b3829f249a27b749"
-  }
+  },
+  "payload_files": [
+    "part_00.b64",
+    "part_01.b64",
+    "part_02.b64",
+    "part_03_0.b64",
+    "part_03_1.b64",
+    "part_03_2.b64",
+    "part_04.b64",
+    "part_05_0.b64",
+    "part_05_1.b64",
+    "part_05_2.b64",
+    "part_06.b64",
+    "part_07.b64"
+  ]
 }
