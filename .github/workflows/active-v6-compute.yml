@@ -7,6 +7,12 @@ on:
     paths:
       - "research/active_v6_compute/**"
       - ".github/workflows/active-v6-compute.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "research/active_v6_compute/**"
+      - ".github/workflows/active-v6-compute.yml"
   workflow_dispatch:
 
 permissions:
