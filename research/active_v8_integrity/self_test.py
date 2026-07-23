@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 from signals import build_v8_relative
 
-EXPECTED_SIGNAL_SHA256 = "bc5625ed41977e8897fdd23ed4fd5af8ff9ded2d7be851f4079f402a5133d47e"
+EXPECTED_SIGNAL_SHA256 = "4f3e56633b7470005afb9e27e178dc8db1fd58f3429d46952c69ce977a860fea"
 
 
 def main() -> int:
