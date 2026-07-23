@@ -1,0 +1,59 @@
+name: Active V9 compute
+
+on:
+  push:
+    branches:
+      - agent/active-v9-xs-perp-compute
+    paths:
+      - "research/active_v9_compute/**"
+      - ".github/workflows/active-v9-compute.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "research/active_v9_compute/**"
+      - ".github/workflows/active-v9-compute.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore Binance archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/v9
+          key: binance-usdm-daily-fixed-universe-2020-2026-v9
+      - name: Install dependencies
+        run: python -m pip install -r research/active_v9_compute/requirements.txt
+      - name: Compile source
+        run: python -m py_compile research/active_v9_compute/*.py
+      - name: Run deterministic self-test
+        run: python research/active_v9_compute/run.py --self-test
+      - name: Run full Active V9 research
+        run: |
+          python research/active_v9_compute/run.py \
+            --output artifacts/active_v9 \
+            --cache .cache/v9
+          mkdir -p artifacts/active_v9/source
+          cp research/active_v9_compute/*.py artifacts/active_v9/source/
+          cp research/active_v9_compute/README.md artifacts/active_v9/source/
+          cp research/active_v9_compute/requirements.txt artifacts/active_v9/source/
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-v9-compute
+          path: artifacts/active_v9
+          if-no-files-found: warn
+          retention-days: 30
