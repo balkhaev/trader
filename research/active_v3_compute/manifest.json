@@ -1,14 +1,14 @@
 {
   "parts": 3,
-  "encoded_bytes": 12112,
-  "encoded_sha256": "c22dd0a6e13df64a4b301e261b38b4dd7eb81c9b68b91e56e41537aefd1b2539",
-  "archive_bytes": 9084,
-  "archive_sha256": "f67acde480e696c12d477359089758ab95a5bf1ecdb73ea4a846ff9bb1b9bb93",
+  "encoded_bytes": 12296,
+  "encoded_sha256": "ea90595019bfa1afc6bec04b11b2d7f2eda6d2c8222b84ec564d1e3c14ef230a",
+  "archive_bytes": 9222,
+  "archive_sha256": "8ec7e19a5f9aa33f04724b61b6cf94adf09ed3118221e0c6b3afc126533b06d0",
   "source_files": {
     "config.py": "5df497962a22ae5fc3f6e1f2641946143680b549326789a78a876cd43e8da4a9",
     "data.py": "547b1b3babc2c7be23d6fb2ef0f5d6f73eb3a11a98066a70778607c607977ad3",
     "metrics.py": "bcc443b8830b3f8b7046adcf78333e56edf7d78e8e30cf30c61af7be3994dd4f",
-    "strategy.py": "5b291e54549145065edac2430b6cef97d888d42d87db36299dd112e3d38dabef",
+    "strategy.py": "fac26be36d642f336ee9c082a0203c5abfa9278167e1117e8715f25413cb0198",
     "run_research.py": "4bb996fad513babfe23112da04d94b70240750da7d2c5bb263a78033cacd7418"
   }
 }
