@@ -1,0 +1,17 @@
+{
+  "parts": 7,
+  "encoded_bytes": 19952,
+  "encoded_sha256": "abe3a0d31e0130de6616b16fc6b0bc72120fd71d26d4766522b7150182d4211f",
+  "archive_bytes": 14964,
+  "archive_sha256": "d517961ffe7739c3f012191fb3e5eba8c8e6a736d64b3fbeced23c9f4ebb1a0a",
+  "source_files": {
+    "README.md": "990dacdb6ff597f02f59d71140bb5d750d09ab336f0d36dfc21b7e64c274606c",
+    "config.py": "ef76ebe09869b7fd977c6e81ed45df46ca9c441dcee16d7ceec2b8b981df99b5",
+    "data.py": "d69a61a59d61ba2a6cc506bcd5b7ceaa3f321b61eba1e97a1b23872b8127a6ad",
+    "market.py": "88a035d3aba535fc080ecaec2801ec7c2753812c731f4870faae5f36e485fe76",
+    "metrics.py": "43858044642e7e738d3487d4890030c3c4cfd9f73e53bcd5ce10e69059b0642c",
+    "strategy.py": "cf74c82be2a08c23753a5c4f5f76f49b89c89b4d66666eb83b6680d8586fd6be",
+    "run_research.py": "af07019ca63941e454644e3cf8c76f5caee398d6cebb691713d0e8759a39c366",
+    "requirements.txt": "40a7775f9f27385f94f8f686fcc81e4cca0fc58723fd6a46b3829f249a27b749"
+  }
+}
