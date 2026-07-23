@@ -4,7 +4,8 @@
 The runner is stored as a compressed, integrity-checked payload because the
 GitHub connector used to publish this isolated research branch has a small
 per-write text budget. The generated readable Python source is copied into the
-workflow artifact before execution.
+workflow artifact before execution. A separate driver performs independently
+initialized validation and test runs.
 """
 from __future__ import annotations
 
@@ -59,10 +60,16 @@ output = output_path_from_argv()
 if output is not None:
     output.mkdir(parents=True, exist_ok=True)
     (output / "run_backtest.py").write_bytes(source)
+    (output / "driver.py").write_bytes((ROOT / "driver.py").read_bytes())
     (output / "source_integrity.txt").write_text(
         f"sha256={EXPECTED_SOURCE_SHA256}\nbytes={len(source)}\n",
         encoding="utf-8",
     )
 
-sys.argv[0] = str(generated)
-runpy.run_path(str(generated), run_name="__main__")
+driver = ROOT / "driver.py"
+sys.argv[0] = str(driver)
+runpy.run_path(
+    str(driver),
+    run_name="__main__",
+    init_globals={"GENERATED_RUNNER": generated},
+)
