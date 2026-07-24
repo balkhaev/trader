@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parent
 M=json.loads((ROOT/'manifest.json').read_text())
 def sha(x:bytes)->str:return hashlib.sha256(x).hexdigest()
 def reconstruct()->Path:
-    parts=sorted((ROOT/'payload').glob('part_*.b64'))
+    parts=sorted((ROOT/M.get('payload_dir','payload')).glob('part_*.b64'))
     if len(parts)!=M['parts']:raise SystemExit('payload part count mismatch')
     for p,meta in zip(parts,M['part_files']):
         data=p.read_bytes().strip()
