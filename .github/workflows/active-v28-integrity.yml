@@ -25,6 +25,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Write bundle diagnostics
+        run: |
+          python - <<'PY' > diagnostics.txt
+          import base64,hashlib,json
+          from pathlib import Path
+          r=Path('research/active_v28_integrity');m=json.loads((r/'manifest.json').read_text());b=(r/'bundle.b64').read_bytes()
+          print('encoded_len',len(b));print('encoded_sha256',hashlib.sha256(b).hexdigest())
+          try:
+            raw=base64.b64decode(b,validate=True);print('decoded_len',len(raw));print('decoded_sha256',hashlib.sha256(raw).hexdigest())
+          except Exception as exc:print('decode_error',repr(exc))
+          print('expected',json.dumps(m,sort_keys=True))
+          PY
+          cat diagnostics.txt
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-v28-integrity-diagnostics
+          path: diagnostics.txt
+          retention-days: 7
       - name: Verify bundle bytes and hashes
         run: |
           python - <<'PY'
@@ -33,7 +52,6 @@ jobs:
           r=Path('research/active_v28_integrity');m=json.loads((r/'manifest.json').read_text());b=(r/'bundle.b64').read_bytes()
           assert len(b)==m['encoded_bytes'],(len(b),m['encoded_bytes'])
           assert hashlib.sha256(b).hexdigest()==m['encoded_sha256'],hashlib.sha256(b).hexdigest()
-          print(len(b),hashlib.sha256(b).hexdigest())
           PY
       - name: Reconstruct and compile source
         run: |
@@ -48,7 +66,6 @@ jobs:
               assert all(not Path(x.name).is_absolute() and '..' not in Path(x.name).parts for x in tf.getmembers());tf.extractall(td,filter='data')
             src=list(td.rglob('*.py'));assert len(src)>=8,len(src)
             for p in src:py_compile.compile(str(p),doraise=True)
-            print('compiled',len(src))
           PY
       - name: Verify frozen decisions and metrics
         run: |
@@ -60,12 +77,8 @@ jobs:
             td=Path(td)
             with tarfile.open(fileobj=io.BytesIO(raw),mode='r:bz2') as tf:tf.extractall(td,filter='data')
             s=json.loads(next(td.rglob('summary.json')).read_text());f=json.loads(next(td.rglob('frozen_candidate.json')).read_text())
-            assert s['status']=='frozen_paper_forward_candidate'
-            assert all(s['acceptance_checks'].values())
+            assert s['status']=='frozen_paper_forward_candidate';assert all(s['acceptance_checks'].values())
             assert s['stress_full']['annualized_return']>.30 and s['stress_full']['max_drawdown']>-.30
-            assert s['funding_audits']['fund60']['full_cagr']>.29
-            assert s['funding_audits']['fund80_margin125']['final_return']>0
-            assert f['candidate']=='ACTIVE_V28_EXACT8H_BREAKOUT_CARRY_CASH'
-            assert f['target_gross_cap']==.85 and f['selection_excludes_2026h1'] is True
-            print('frozen decisions passed')
+            assert s['funding_audits']['fund60']['full_cagr']>.29 and s['funding_audits']['fund80_margin125']['final_return']>0
+            assert f['candidate']=='ACTIVE_V28_EXACT8H_BREAKOUT_CARRY_CASH' and f['target_gross_cap']==.85 and f['selection_excludes_2026h1'] is True
           PY
