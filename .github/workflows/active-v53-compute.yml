@@ -1,0 +1,98 @@
+name: Active V53 immutable V52 audit
+
+on:
+  push:
+    branches: [agent/active-v52-onchain-diversification]
+    paths:
+      - "research/active_v53_compute/**"
+      - ".github/workflows/active-v53-compute.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/active_v53_compute/**"
+      - ".github/workflows/active-v53-compute.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONUNBUFFERED: "1"
+      V44_COMMIT: c96d10fe46ef5668514f1279db17941dade931c4
+      V49_COMMIT: 123c8a8715d3631700f43d071576d3078686bb74
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore pinned market and onchain cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/v44
+          key: v44-coinmetrics-f1a36a-binance-btc-2015-2026-v1
+      - name: Fetch and verify frozen dependencies
+        run: |
+          set -euxo pipefail
+          raw=https://raw.githubusercontent.com/balkhaev/trader
+          mkdir -p research/active_v44_compute/payload research/active_v46_compute research/active_v49_compute
+          curl -fL "$raw/$V44_COMMIT/research/active_v44_compute/bootstrap.py" -o research/active_v44_compute/bootstrap.py
+          curl -fL "$raw/$V44_COMMIT/research/active_v44_compute/manifest.json" -o research/active_v44_compute/manifest.json
+          for i in $(seq 0 12); do
+            n=$(printf '%03d' "$i")
+            curl -fL "$raw/$V44_COMMIT/research/active_v44_compute/payload/chunk_$n" -o "research/active_v44_compute/payload/chunk_$n"
+          done
+          curl -fL "$raw/$V44_COMMIT/research/active_v46_compute/run_v46.py" -o research/active_v46_compute/run_v46.py
+          for n in 000 001 002; do
+            curl -fL "$raw/$V49_COMMIT/research/active_v49_compute/part_$n.pyfrag" -o "research/active_v49_compute/part_$n.pyfrag"
+          done
+          python research/active_v44_compute/bootstrap.py --extract-only
+          cat research/active_v49_compute/part_*.pyfrag > research/active_v49_compute/run_v49.py
+          echo "c805f03f8ad10c52a8a6ec781ed8557eca1510e27af43aef6ec46fb366130f04  research/active_v46_compute/run_v46.py" | sha256sum -c -
+          echo "3e0e1693133b153fd4b7903b0f3cf2bc14a48f45b86cf7583647c2101300c8e3  research/active_v49_compute/run_v49.py" | sha256sum -c -
+      - name: Reconstruct and verify V53 source
+        run: |
+          cat research/active_v53_compute/part_*.pyfrag > research/active_v53_compute/run_v53.py
+          echo "b763d3f0aa92bc29bc660107f8cd45a79c2056dc6d56fdfd06109bd86d6cb83b  research/active_v53_compute/run_v53.py" | sha256sum -c -
+          python -m py_compile research/active_v44_compute/generated/*.py research/active_v46_compute/run_v46.py research/active_v49_compute/run_v49.py research/active_v53_compute/run_v53.py
+      - name: Install dependencies
+        run: python -m pip install -r research/active_v44_compute/generated/requirements.txt
+      - name: Run deterministic V53 self-test
+        run: python research/active_v53_compute/run_v53.py --self-test
+      - name: Run full Active V53 audit
+        id: audit
+        continue-on-error: true
+        run: |
+          mkdir -p artifacts/active_v53
+          set -o pipefail
+          python research/active_v53_compute/run_v53.py \
+            --v44-source research/active_v44_compute/generated \
+            --v46-source research/active_v46_compute/run_v46.py \
+            --v49-source research/active_v49_compute/run_v49.py \
+            --cache .cache/v44 \
+            --output artifacts/active_v53 \
+            2>&1 | tee artifacts/active_v53/run.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > artifacts/active_v53/run_exit_code.txt
+          exit "$code"
+      - name: Preserve exact source and provenance
+        if: always()
+        run: |
+          mkdir -p artifacts/active_v53/source
+          cp research/active_v53_compute/run_v53.py artifacts/active_v53/source/ || true
+          cp research/active_v49_compute/run_v49.py artifacts/active_v53/source/ || true
+          cp research/active_v46_compute/run_v46.py artifacts/active_v53/source/ || true
+          cp -r research/active_v44_compute/generated artifacts/active_v53/source/v44 || true
+          echo "${{ steps.audit.outcome }}" > artifacts/active_v53/workflow_audit_outcome.txt
+          echo "${{ github.sha }}" > artifacts/active_v53/compute_commit.txt
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-v53-v52-audit
+          path: artifacts/active_v53
+          if-no-files-found: warn
+          retention-days: 30
