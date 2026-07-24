@@ -1,0 +1,67 @@
+name: Active V44-V45 onchain compute
+
+on:
+  push:
+    branches: [agent/active-v44-v45-onchain]
+    paths:
+      - "research/active_v44_compute/**"
+      - ".github/workflows/active-v44-v45-compute.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/active_v44_compute/**"
+      - ".github/workflows/active-v44-v45-compute.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore Coin Metrics and Binance cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/v44
+          key: v44-coinmetrics-f1a36a-binance-btc-2015-2026-v1
+      - name: Reconstruct and verify source
+        run: python research/active_v44_compute/bootstrap.py --extract-only
+      - name: Install dependencies
+        run: python -m pip install -r research/active_v44_compute/generated/requirements.txt
+      - name: Compile source
+        run: python -m py_compile research/active_v44_compute/generated/*.py
+      - name: Run deterministic execution and causal self-test
+        run: python research/active_v44_compute/bootstrap.py --self-test
+      - name: Run full Active V44-V45 research
+        id: research
+        continue-on-error: true
+        run: |
+          mkdir -p artifacts/active_v44_v45
+          set -o pipefail
+          python research/active_v44_compute/bootstrap.py --cache .cache/v44 --output artifacts/active_v44_v45 2>&1 | tee artifacts/active_v44_v45/run.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > artifacts/active_v44_v45/run_exit_code.txt
+          exit "$code"
+      - name: Preserve source and manifest
+        if: always()
+        run: |
+          mkdir -p artifacts/active_v44_v45/source
+          cp research/active_v44_compute/generated/* artifacts/active_v44_v45/source/ || true
+          cp research/active_v44_compute/manifest.json artifacts/active_v44_v45/source_payload_manifest.json
+          echo "${{ steps.research.outcome }}" > artifacts/active_v44_v45/workflow_research_outcome.txt
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-v44-v45-onchain
+          path: artifacts/active_v44_v45
+          if-no-files-found: warn
+          retention-days: 30
