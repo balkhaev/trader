@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse,base64,hashlib,io,json,py_compile,subprocess,sys,tarfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
-PATCHED_DATA_SHA256='9e4e48b7e441da71cf8610201d783093d950f4cd4658b31b169ad84a635a88b4'
+PATCHED_DATA_SHA256='c85adf9ca57f052eedb8ee06fa627db00b6d9b5ac673d83f9decaff21fe6fcbe'
 
 def apply_data_quality_patch(out:Path):
     p=out/'data.py';s=p.read_text()
@@ -11,8 +11,20 @@ def apply_data_quality_patch(out:Path):
     new1="    positive_metric_cols=['sum_open_interest','sum_open_interest_value','count_toptrader_long_short_ratio','sum_toptrader_long_short_ratio','count_long_short_ratio','sum_taker_long_short_vol_ratio']\n    nonpositive=met[positive_metric_cols]<=0\n    nonpositive_rows=int(nonpositive.any(axis=1).sum());nonpositive_cells=int(nonpositive.sum().sum())\n    # Binance metrics archives occasionally contain zero-valued snapshots. Ratios and OI are strictly positive by construction,\n    # so zeros are treated as unavailable observations rather than a market signal. They are never forward-filled.\n    met.loc[:,positive_metric_cols]=met[positive_metric_cols].mask(nonpositive)\n    index=pd.date_range(cfg.start,cfg.end_exclusive,freq='8h',inclusive='left',tz='UTC');k=k.reindex(index);fund=fr.reindex(index).fillna(0.)\n"
     old2="        'metric_missing_8h':int((~metrics_available).sum()),'metric_duplicate_rows_removed':int(sum(len(x) for x in metric_parts)-len(met)),\n        'checksum_available':int(sum(bool(r['checksum_available']) for r in records)),'checksum_failed':int(sum(r['checksum_passed'] is False for r in records)),\n"
     new2="        'metric_missing_8h':int((~metrics_available).sum()),'metric_duplicate_rows_removed':int(sum(len(x) for x in metric_parts)-len(met)),\n        'metric_nonpositive_rows_masked':nonpositive_rows,'metric_nonpositive_cells_masked':nonpositive_cells,\n        'checksum_available':int(sum(bool(r['checksum_available']) for r in records)),'checksum_failed':int(sum(r['checksum_passed'] is False for r in records)),\n"
-    assert old1 in s and old2 in s,'unexpected sealed data.py; refusing unverified patch'
-    p.write_text(s.replace(old1,new1).replace(old2,new2))
+    old_checksum="        if cp is False:raise ValueError('checksum mismatch '+url)"
+    retry_month="""        if cp is False:
+            print('checksum retry',url,flush=True);path.unlink(missing_ok=True);payload=request(url)
+            if payload is None:raise ValueError('checksum source disappeared '+url)
+            path.write_bytes(payload);digest=hashlib.sha256(payload).hexdigest();cp=value==digest
+            if cp is False:raise ValueError('checksum mismatch after retry '+url)"""
+    retry_metric="""        if cp is False:
+            print('checksum retry',url,flush=True);path.unlink(missing_ok=True);payload=request(url,retries=6,timeout=90)
+            if payload is None:raise ValueError('checksum source disappeared '+url)
+            path.write_bytes(payload);digest=hashlib.sha256(payload).hexdigest();cp=value==digest
+            if cp is False:raise ValueError('checksum mismatch after retry '+url)"""
+    assert old1 in s and old2 in s and s.count(old_checksum)==2,'unexpected sealed data.py; refusing unverified patch'
+    s=s.replace(old1,new1).replace(old2,new2).replace(old_checksum,retry_month,1).replace(old_checksum,retry_metric,1)
+    p.write_text(s)
     assert hashlib.sha256(p.read_bytes()).hexdigest()==PATCHED_DATA_SHA256
 
 def reconstruct():
