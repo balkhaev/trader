@@ -41,13 +41,22 @@ jobs:
       - name: Run deterministic causal self-test
         run: python research/active_v42_compute/bootstrap.py --self-test
       - name: Run full Active V42-V43 research
-        run: python research/active_v42_compute/bootstrap.py --cache .cache/v42 --output artifacts/active_v42_v43
+        id: research
+        continue-on-error: true
+        run: |
+          mkdir -p artifacts/active_v42_v43
+          set -o pipefail
+          python research/active_v42_compute/bootstrap.py --cache .cache/v42 --output artifacts/active_v42_v43 2>&1 | tee artifacts/active_v42_v43/run.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > artifacts/active_v42_v43/run_exit_code.txt
+          exit "$code"
       - name: Preserve source and manifest
         if: always()
         run: |
           mkdir -p artifacts/active_v42_v43/source
           cp research/active_v42_compute/generated/* artifacts/active_v42_v43/source/ || true
           cp research/active_v42_compute/manifest.json artifacts/active_v42_v43/source_payload_manifest.json
+          echo "${{ steps.research.outcome }}" > artifacts/active_v42_v43/workflow_research_outcome.txt
       - name: Upload research artifact
         if: always()
         uses: actions/upload-artifact@v4
