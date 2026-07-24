@@ -1,0 +1,55 @@
+  if ok:lo=mid;btc,baf=tc,af
+  else:hi=mid
+ return lo,btc,baf
+
+def simulate(ctx:Ctx,start,end,cost_bps,cash:CashPolicy|None,audit:AuditPolicy,carry_enabled=True):
+ begin,finish=utc(start),utc(end);locs=np.flatnonzero((ctx.index>=begin)&(ctx.index<finish));ns=len(ctx.symbols);npair=len(ctx.pair_symbols)
+ pend_s=ctx.spot_signal[locs[0]-1].copy() if locs[0]>0 else np.zeros(ns);pend_bp=ctx.perp_signal[locs[0]-1].copy() if locs[0]>0 else np.zeros(npair);pend_c=ctx.carry_signal[locs[0]-1].copy() if locs[0]>0 and carry_enabled else np.zeros(npair)
+ bsv=np.zeros(ns);csv=np.zeros(ns);bpn=np.zeros(npair);cpn=np.zeros(npair);liquid=10000.;treasury=0.;pending=[];initial=10000.;high=initial;locked=1.5;prev=None;prev_c=np.zeros(npair)
+ n=len(locs);equity=np.empty(n);gross=np.empty(n);turnover=np.empty(n);costs=np.empty(n);fundp=np.empty(n);tint=np.empty(n);missed=np.empty(n);carrygross=np.empty(n);tcosts=np.empty(n);xfercosts=np.empty(n);risk_scales=np.empty(n);high_waters=np.empty(n)
+ rate=ctx.rate_by_policy[cash.name] if cash else None;cost_rate=cost_bps/10000.
+ for ii,loc in enumerate(locs):
+  transfer=interest=forced_not=forced_cost=0.;keep=[]
+  for sloc,amt in pending:
+   if sloc<=loc:liquid+=amt
+   else:keep.append((sloc,amt))
+  pending=keep
+  i0=loc*3;funding_total=0.
+  if prev is not None:
+   if cash and treasury>0:interest=treasury*((1+rate[loc])**(1/365)-1);treasury+=interest
+   comb=bsv+csv
+   ids=np.flatnonzero(comb>0)
+   for j in ids:
+    a=ctx.sc[prev,j];b=ctx.so[loc,j]
+    if np.isfinite(a) and np.isfinite(b):r=b/a;bsv[j]*=r;csv[j]*=r
+    else:
+     nn=float(comb[j]);pen=nn*max(cost_rate,.01);liquid+=max(0.,nn-pen);bsv[j]=csv[j]=0.;forced_not+=nn;forced_cost+=pen
+   r=np.divide(ctx.o8[i0],ctx.c8[i0-1],out=np.ones(npair),where=np.isfinite(ctx.o8[i0])&np.isfinite(ctx.c8[i0-1]));liquid+=float(np.sum((bpn+cpn)*(r-1)));bpn*=r;cpn*=r
+   fr=ctx.f8[i0];rawb=float(np.sum(-(bpn*fr)));rawc=-(cpn*fr);adj=np.where(rawc>0,rawc*audit.positive_funding_haircut,rawc);fp=rawb+float(adj.sum());liquid+=fp;funding_total+=fp
+  pbal=float(sum(x[1] for x in pending));tot_s=bsv+csv;tot_p=bpn+cpn;eq=float(liquid+treasury+pbal+tot_s.sum())
+  if high>=2*initial:locked=min(locked,.75)
+  elif high>=1.5*initial:locked=min(locked,1.)
+  as_=tot_s/eq;ap=tot_p/eq;bs,bp=base_targets(pend_s,pend_bp,locked,.85,ctx.av[loc])
+  if carry_enabled:ds,dp,cs,cp,calpha,dgross=add_carry(bs,bp,pend_c,ctx.pair_to_spot,.85)
+  else:ds,dp,cs,cp,calpha,dgross=bs,bp,np.zeros(ns),np.zeros(npair),0.,float(bs.sum()+np.abs(bp).sum())
+  if cash:
+   alpha,tc,after=feasible(ds,dp,as_,ap,eq,treasury+pbal,cost_rate,cash.operational_reserve,audit.margin_multiple)
+   if alpha<.999999 and treasury>0:
+    desired_after=max(0.,eq-eq*float(np.abs(ds-as_).sum()+np.abs(dp-ap).sum())*cost_rate);max_t=max(0.,desired_after*(1-cash.operational_reserve-float(ds.sum())-audit.margin_multiple*float(np.abs(dp).sum())));req=min(max(0.,treasury-max_t),treasury)
+    if req>0:
+     rc=req*cash.transfer_cost_bps/10000.;pending.append((ctx.settle1[loc],req-rc));treasury-=req;transfer+=rc;pbal=float(sum(x[1] for x in pending));eq-=rc;alpha,tc,after=feasible(ds,dp,as_,ap,eq,treasury+pbal,cost_rate,cash.operational_reserve,audit.margin_multiple)
+  else:
+   alpha=1.;tc=eq*float(np.abs(ds-as_).sum()+np.abs(dp-ap).sum())*cost_rate;after=max(0.,eq-tc)
+  ts=ds*alpha;tp=dp*alpha;turn=float(np.abs(ts-as_).sum()+np.abs(tp-ap).sum());bsv=bs*alpha*after;csv=cs*alpha*after;bpn=bp*alpha*after;cpn=cp*alpha*after;pbal=float(sum(x[1] for x in pending));liquid=max(0.,after-treasury-pbal-float((bsv+csv).sum()))
+  sr=np.divide(ctx.sc[loc],ctx.so[loc],out=np.ones(ns),where=np.isfinite(ctx.so[loc])&np.isfinite(ctx.sc[loc]));bsv*=sr;csv*=sr
+  entry=np.any(pend_c>prev_c+1e-12)
+  for k in range(3):
+   i8=i0+k;r=np.divide(ctx.c8[i8],ctx.o8[i8],out=np.ones(npair),where=np.isfinite(ctx.o8[i8])&np.isfinite(ctx.c8[i8]));liquid+=float(np.sum((bpn+cpn)*(r-1)));bpn*=r;cpn*=r
+   if k<2:
+    fr=ctx.f8[i8+1];rawb=float(np.sum(-(bpn*fr)));rawc=-(cpn*fr)
+    if audit.suppress_first_intraday_funding_on_carry_entry and entry and k==0:adj=np.minimum(rawc,0.)
+    else:adj=np.where(rawc>0,rawc*audit.positive_funding_haircut,rawc)
+    fp=rawb+float(adj.sum());liquid+=fp;funding_total+=fp
+  pbal=float(sum(x[1] for x in pending));eqc=float(liquid+treasury+pbal+(bsv+csv).sum());high=max(high,eqc)
+  nbs,nbp=base_targets(ctx.spot_signal[loc],ctx.perp_signal[loc],locked,.85,ctx.av[loc]);nds,ndp=(add_carry(nbs,nbp,ctx.carry_signal[loc],ctx.pair_to_spot,.85)[:2] if carry_enabled else (nbs,nbp))
+  if cash:
