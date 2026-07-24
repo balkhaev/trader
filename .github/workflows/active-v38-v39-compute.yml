@@ -28,7 +28,7 @@ jobs:
       - name: Restore exact 8h Binance cache
         uses: actions/cache@v4
         with:
-          path: .cache/v38
+          path: .cache/v33
           key: binance-v33-fixed-universe-8h-2020-2026
           restore-keys: |
             binance-v33-fixed-universe-8h-2020-2026
@@ -41,7 +41,7 @@ jobs:
       - name: Run deterministic causal self-test
         run: python research/active_v38_compute/bootstrap.py --self-test
       - name: Run full Active V38-V39 research
-        run: python research/active_v38_compute/bootstrap.py --cache .cache/v38 --output artifacts/active_v38_v39
+        run: python research/active_v38_compute/bootstrap.py --cache .cache/v33 --output artifacts/active_v38_v39
       - name: Preserve source and manifest
         if: always()
         run: |
