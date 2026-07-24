@@ -1,0 +1,35 @@
+name: Public research checkpoint V68 reproof
+
+on:
+  push:
+    branches: [agent/checkpoint-v68-public-reproof]
+    paths:
+      - "research/checkpoint_v68_public/**"
+      - ".github/workflows/checkpoint-v68-public-reproof.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/checkpoint_v68_public/**"
+      - ".github/workflows/checkpoint-v68-public-reproof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Reconstruct exact checkpoint package
+        run: python research/checkpoint_v68_public/bootstrap.py
+      - name: Verify exact checkpoint package
+        run: python research/checkpoint_v68_public/bootstrap.py --verify
+      - name: Compile preserved source
+        run: python -m py_compile research/checkpoint_v68_public/generated/research/checkpoint_v68/source/*.py
+      - name: Emit exact archive hashes
+        run: cat research/checkpoint_v68_public/manifest.json
