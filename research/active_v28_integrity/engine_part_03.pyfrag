@@ -1,0 +1,35 @@
+   maxnext=max(0.,eqc*(1-cash.operational_reserve-float(nds.sum())-audit.margin_multiple*float(np.abs(ndp).sum())))
+   if treasury>maxnext:
+    req=min(treasury-maxnext,treasury);rc=req*cash.transfer_cost_bps/10000.;pending.append((ctx.settle1[loc],req-rc));treasury-=req;transfer+=rc;eqc-=rc
+   if ii%cash.sweep_interval_days==0 and liquid>0 and ctx.is_bus[loc]:
+    current=float((bsv+csv).sum());inc=max(0.,eqc*float(nds.sum())-current);required=eqc*cash.operational_reserve+eqc*audit.margin_multiple*float(np.abs(ndp).sum())+inc+eqc*.002;excess=max(0.,liquid-required);room=max(0.,cash.max_treasury_fraction*eqc-treasury);sweep=min(excess,room);minimum=cash.minimum_transfer_fraction*eqc
+    if sweep>=minimum:rc=sweep*cash.transfer_cost_bps/10000.;liquid-=sweep;treasury+=sweep-rc;transfer+=rc;eqc-=rc
+  tot_s=bsv+csv;tot_p=bpn+cpn;equity[ii]=eqc;gross[ii]=(tot_s.sum()+np.abs(tot_p).sum())/eqc;turnover[ii]=turn+forced_not/max(eq,1e-9);costs[ii]=tc+forced_cost+transfer;tcosts[ii]=tc+forced_cost;xfercosts[ii]=transfer;fundp[ii]=funding_total;tint[ii]=interest;missed[ii]=max(0.,dgross-float(ts.sum()+np.abs(tp).sum()));carrygross[ii]=(csv.sum()+np.abs(cpn).sum())/eqc;risk_scales[ii]=locked;high_waters[ii]=high
+  pend_s=ctx.spot_signal[loc].copy();pend_bp=ctx.perp_signal[loc].copy();pend_c=ctx.carry_signal[loc].copy() if carry_enabled else np.zeros(npair);prev_c=pend_c.copy();prev=loc
+ return pd.DataFrame({'equity':equity,'gross':gross,'turnover':turnover,'costs':costs,'trading_costs':tcosts,'transfer_costs':xfercosts,'funding_pnl':fundp,'treasury_interest':tint,'missed_target_gross':missed,'carry_gross':carrygross,'risk_scale':risk_scales,'high_water':high_waters},index=ctx.index[locs])
+
+def main():
+ data,ctx=prepare();zero=ctx.carry_signal.copy()*0;rows=[];accounts={};jobs=[];exact=AUDITS[0]
+ for per in (*SEGMENTS,'prefinal','full','final_2026h1'):jobs.append(('carry_cash',exact,'stress',40.,per,True,CASH))
+ for audit in AUDITS[1:]:
+  for per in ('prefinal','full','final_2026h1'):jobs.append(('carry_cash',audit,'stress',40.,per,True,CASH))
+ for scen,bps in SCENARIOS.items():
+  if scen=='stress':continue
+  for per in (*SEGMENTS,'prefinal','full','final_2026h1'):jobs.append(('carry_cash',exact,scen,bps,per,True,CASH))
+ for label,cash in [('v26_exact',None),('v27_exact_cash',CASH)]:
+  for per in (*SEGMENTS,'prefinal','full','final_2026h1'):jobs.append((label,exact,'stress',40.,per,False,cash))
+ print('jobs',len(jobs),flush=True);t0=time.time()
+ original=ctx.carry_signal.copy()
+ for n,(label,audit,scen,bps,per,enabled,cash) in enumerate(jobs,1):
+  ctx.carry_signal=original if enabled else zero
+  a=simulate(ctx,*PERIODS[per],bps,cash,audit,enabled);m=v8engine.metrics(a);rows.append({'candidate':label,'audit':audit.name,'scenario':scen,'period':per,**m,'treasury_interest':float(a.treasury_interest.sum()),'funding_pnl':float(a.funding_pnl.sum()),'avg_carry_gross':float(a.carry_gross.mean()),'avg_missed_gross':float(a.missed_target_gross.mean()),'p95_missed_gross':float(a.missed_target_gross.quantile(.95))})
+  if per in ('full','final_2026h1'):accounts[(label,audit.name,scen,per)]=a
+  if n%10==0:print(n,'elapsed',time.time()-t0,flush=True)
+ ctx.carry_signal=original;df=pd.DataFrame(rows);df.to_csv(OUT/'metrics.csv',index=False)
+ for k,a in accounts.items():a.to_csv(OUT/f"equity_{'_'.join(k)}.csv")
+ def r(c,a,s,p):return df[(df.candidate==c)&(df.audit==a)&(df.scenario==s)&(df.period==p)].iloc[0]
+ audits={}
+ for a in [x.name for x in AUDITS]:
+  pre=r('carry_cash',a,'stress','prefinal');full=r('carry_cash',a,'stress','full');fin=r('carry_cash',a,'stress','final_2026h1');audits[a]={'prefinal_cagr':float(pre.annualized_return),'full_cagr':float(full.annualized_return),'full_return':float(full.total_return),'full_dd':float(full.max_drawdown),'full_sharpe':float(full.sharpe),'final_return':float(fin.total_return),'final_dd':float(fin.max_drawdown),'funding_pnl':float(full.funding_pnl),'avg_carry_gross':float(full.avg_carry_gross)}
+ b26=r('v26_exact','exact','stress','full');b27=r('v27_exact_cash','exact','stress','full');out={'candidate':'V43_EXACT_8H_FUNDING_CARRY_CASH_AUDIT','status':'audit_complete','policies':[asdict(x) for x in CARRY_POLICIES],'cash':asdict(CASH),'audits':audits,'exact_v26':{'full_cagr':float(b26.annualized_return),'full_return':float(b26.total_return),'full_dd':float(b26.max_drawdown),'final_return':float(r('v26_exact','exact','stress','final_2026h1').total_return)},'exact_v27':{'full_cagr':float(b27.annualized_return),'full_return':float(b27.total_return),'full_dd':float(b27.max_drawdown),'final_return':float(r('v27_exact_cash','exact','stress','final_2026h1').total_return)}};(OUT/'summary.json').write_text(json.dumps(out,indent=2));print(json.dumps(out,indent=2))
+if __name__=='__main__':main()
