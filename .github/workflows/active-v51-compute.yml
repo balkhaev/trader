@@ -53,13 +53,27 @@ jobs:
           cat research/active_v49_compute/part_*.pyfrag > research/active_v49_compute/run_v49.py
           echo "c805f03f8ad10c52a8a6ec781ed8557eca1510e27af43aef6ec46fb366130f04  research/active_v46_compute/run_v46.py" | sha256sum -c -
           echo "3e0e1693133b153fd4b7903b0f3cf2bc14a48f45b86cf7583647c2101300c8e3  research/active_v49_compute/run_v49.py" | sha256sum -c -
-      - name: Install dependencies
-        run: python -m pip install -r research/active_v44_compute/generated/requirements.txt
       - name: Reconstruct and verify V51 source
         run: |
-          cat research/active_v51_compute/part_*.pyfrag > research/active_v51_compute/run_v51.py
+          python - <<'PY'
+          from pathlib import Path
+          root = Path('research/active_v51_compute')
+          parts = sorted(root.glob('part_*.pyfrag'))
+          if not parts:
+              raise SystemExit('no V51 fragments')
+          out = bytearray()
+          for i, path in enumerate(parts):
+              data = path.read_bytes()
+              if i < len(parts) - 1 and data.endswith(b'\n'):
+                  data = data[:-1]
+              out.extend(data)
+          (root / 'run_v51.py').write_bytes(out)
+          PY
           echo "fbf5ac8c1a7ed69f26ce3a9272f2a7799f551a9795f286a82ed9f73c878da369  research/active_v51_compute/run_v51.py" | sha256sum -c -
-          python -m py_compile research/active_v44_compute/generated/*.py research/active_v46_compute/run_v46.py research/active_v49_compute/run_v49.py research/active_v51_compute/run_v51.py
+      - name: Install dependencies
+        run: python -m pip install -r research/active_v44_compute/generated/requirements.txt
+      - name: Compile exact sources
+        run: python -m py_compile research/active_v44_compute/generated/*.py research/active_v46_compute/run_v46.py research/active_v49_compute/run_v49.py research/active_v51_compute/run_v51.py
       - name: Run immutable audit self-test
         run: python research/active_v51_compute/run_v51.py --self-test
       - name: Run full Active V51 audit
