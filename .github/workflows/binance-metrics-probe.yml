@@ -5,6 +5,10 @@ on:
     branches: [agent/binance-metrics-probe]
     paths:
       - ".github/workflows/binance-metrics-probe.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/binance-metrics-probe.yml"
   workflow_dispatch:
 
 permissions:
