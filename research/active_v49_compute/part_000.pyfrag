@@ -1,0 +1,185 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import itertools
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+VOL_WINDOWS = (30, 60, 90)
+BASE_VOL_TARGETS = (0.20, 0.30, 0.40)
+VOL_BUDGET_MULTIPLIERS = (0.80, 0.85, 0.90, 0.95)
+DRAWDOWN_WINDOWS = (180, 252, 365)
+DRAWDOWN_THRESHOLDS = (0.15, 0.20, 0.25, 0.30)
+DRAWDOWN_LOW_RISK = 0.25
+RECOVERY_FAST = (50, 100)
+RECOVERY_SLOW = (150, 200, 250)
+RECOVERY_EXIT_RETURNS = (-0.10, -0.15)
+
+GATES = {
+    "prefinal_cagr_min": 0.10,
+    "prefinal_sharpe_min": 0.75,
+    "prefinal_max_drawdown_min": -0.35,
+    "prefinal_turnover_max": 10.0,
+    "worst_severe_segment_min": -0.12,
+    "worst_extreme_segment_min": -0.20,
+}
+
+
+def volatility_budget(close: pd.Series, multiplier: float) -> pd.Series:
+    """Causal ensemble of neighbouring vol targets, available at the next open."""
+    p = close.astype(float)
+    returns = np.log(p).diff()
+    variants: list[pd.Series] = []
+    for window, base_target in itertools.product(VOL_WINDOWS, BASE_VOL_TARGETS):
+        vol = returns.rolling(window, min_periods=window).std(ddof=1) * np.sqrt(365.0)
+        scale = (base_target * multiplier / vol.replace(0.0, np.nan)).clip(upper=1.0)
+        variants.append(scale.shift(1))
+    return pd.concat(variants, axis=1).mean(axis=1).fillna(0.0).clip(0.0, 1.0)
+
+
+def drawdown_gate(close: pd.Series) -> pd.Series:
+    p = close.astype(float)
+    variants: list[pd.Series] = []
+    for window, threshold in itertools.product(DRAWDOWN_WINDOWS, DRAWDOWN_THRESHOLDS):
+        high = p.rolling(window, min_periods=window).max()
+        drawdown = p / high - 1.0
+        scale = pd.Series(
+            np.where(drawdown < -threshold, DRAWDOWN_LOW_RISK, 1.0),
+            index=p.index,
+            dtype=float,
+        )
+        scale[~np.isfinite(drawdown)] = 0.0
+        variants.append(scale.shift(1))
+    return pd.concat(variants, axis=1).mean(axis=1).fillna(0.0).clip(0.0, 1.0)
+
+
+def recovery_one(close: pd.Series, fast: int, slow: int, exit_return: float) -> pd.Series:
+    p = close.astype(float)
+    fast_ma = p.rolling(fast, min_periods=fast).mean()
+    slow_ma = p.rolling(slow, min_periods=slow).mean()
+    ret30 = p / p.shift(30) - 1.0
+    state = 0.0
+    out = np.zeros(len(p), dtype=float)
+    for i, (price, fma, sma, r30) in enumerate(
+        zip(p.to_numpy(), fast_ma.to_numpy(), slow_ma.to_numpy(), ret30.to_numpy())
+    ):
+        if not all(np.isfinite(x) for x in (price, fma, sma, r30)):
+            state = 0.0
+        elif state <= 0.0:
+            if price > fma and r30 > 0.0:
+                state = 1.0
+        elif price < sma and r30 < exit_return:
+            state = 0.0
+        out[i] = state
+    return pd.Series(out, index=p.index).shift(1).fillna(0.0)
+
+
+def crash_recovery_gate(close: pd.Series) -> pd.Series:
+    variants = [
+        recovery_one(close, fast, slow, exit_ret)
+        for fast, slow, exit_ret in itertools.product(
+            RECOVERY_FAST, RECOVERY_SLOW, RECOVERY_EXIT_RETURNS
+        )
+    ]
+    return pd.concat(variants, axis=1).mean(axis=1).fillna(0.0).clip(0.0, 1.0)
+
+
+def all_nonempty_averages(families: dict[str, pd.Series]) -> dict[str, pd.Series]:
+    out: dict[str, pd.Series] = {}
+    names = tuple(families)
+    for count in range(1, len(names) + 1):
+        for combo in itertools.combinations(names, count):
+            out["+".join(combo)] = pd.concat(
+                [families[name] for name in combo], axis=1
+            ).mean(axis=1)
+    return out
+
+
+def build_v49_processes(base_signal: pd.Series, close: pd.Series) -> dict[str, pd.Series]:
+    base = base_signal.fillna(0.0).clip(0.0, 1.0)
+    families = {
+        f"vol_budget_{int(multiplier * 100)}": base * volatility_budget(close, multiplier)
+        for multiplier in VOL_BUDGET_MULTIPLIERS
+    }
+    return all_nonempty_averages(families)
+
+
+def build_v50_processes(base_signal: pd.Series, close: pd.Series) -> dict[str, pd.Series]:
+    base = base_signal.fillna(0.0).clip(0.0, 1.0)
+    vol95 = volatility_budget(close, 0.95)
+    vol90 = volatility_budget(close, 0.90)
+    recovery = crash_recovery_gate(close)
+    drawdown = drawdown_gate(close)
+    families = {
+        "vol95_x_recovery": base * vol95 * recovery,
+        "vol90_x_recovery": base * vol90 * recovery,
+        "vol95_x_drawdown": base * vol95 * drawdown,
+        "vol90_x_drawdown": base * vol90 * drawdown,
+    }
+    return all_nonempty_averages(families)
+
+
+def load_v46(path: Path):
+    spec = importlib.util.spec_from_file_location("frozen_v46", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def eligible(rows: dict, pre: dict, segments: tuple[str, ...]) -> bool:
+    return bool(
+        pre["annualized_return"] >= GATES["prefinal_cagr_min"]
+        and pre["sharpe"] >= GATES["prefinal_sharpe_min"]
+        and pre["max_drawdown"] >= GATES["prefinal_max_drawdown_min"]
+        and pre["annual_turnover"] <= GATES["prefinal_turnover_max"]
+        and min(rows["stress"][period]["total_return"] for period in segments) > 0.0
+        and min(rows["severe"][period]["total_return"] for period in segments)
+        > GATES["worst_severe_segment_min"]
+        and min(rows["extreme"][period]["total_return"] for period in segments)
+        > GATES["worst_extreme_segment_min"]
+    )
+
+
+def score(rows: dict, pre: dict, segments: tuple[str, ...]) -> float:
+    return float(
+        pre["annualized_return"]
+        + 0.10 * pre["sharpe"]
+        + 0.20 * min(rows["stress"][period]["total_return"] for period in segments)
+        - 0.18 * abs(pre["max_drawdown"])
+        - 0.002 * pre["annual_turnover"]
+    )
+
+
+def run_self_test() -> None:
+    idx = pd.date_range("2018-01-01", periods=1400, freq="1D", tz="UTC")
+    rng = np.random.default_rng(49)
+    close = pd.Series(
+        100.0 * np.exp(np.cumsum(rng.normal(0.0004, 0.025, len(idx)))), index=idx
+    )
+    base = pd.Series(np.where(np.arange(len(idx)) % 31 < 17, 1.0, 0.0), index=idx)
+    books49 = build_v49_processes(base, close)
+    books50 = build_v50_processes(base, close)
+    assert len(books49) == 15 and len(books50) == 15
+    assert all(((s >= 0.0) & (s <= 1.0)).all() for s in (*books49.values(), *books50.values()))
+    changed = close.copy()
+    changed.iloc[-1] *= 7.0
+    changed49 = build_v49_processes(base, changed)
+    changed50 = build_v50_processes(base, changed)
+    for name in books49:
+        assert np.allclose(books49[name], changed49[name], equal_nan=True), name
+    for name in books50:
+        assert np.allclose(books50[name], changed50[name], equal_nan=True), name
+    # Lower budgets must never exceed higher neighbouring budgets.
+    low = base * volatility_budget(close, 0.80)
+    high = base * volatility_budget(close, 0.95)
+    assert (low <= high + 1e-12).all()
+    print("Active V49-V50 causal risk-budget self-test passed")
