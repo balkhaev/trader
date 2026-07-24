@@ -1,0 +1,45 @@
+name: Active V35 funding dispersion compute
+
+on:
+  push:
+    branches: [agent/active-v33-multiasset-carry]
+    paths:
+      - "research/active_v35_compute/**"
+      - ".github/workflows/active-v35-compute.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore V33 Binance cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/v33
+          key: binance-v33-fixed-universe-8h-2020-2026
+      - name: Reconstruct shared source
+        run: python research/active_v33_compute/bootstrap.py --extract-only
+      - name: Install dependencies
+        run: python -m pip install numpy==2.3.5 pandas==2.2.3 numba==0.65.1
+      - name: Verify and compile V35
+        run: |
+          echo "813dad5f349074fa8b1d8841cb3fb359a6f51f43ec1960c3d65a4e35eeedcdc8  research/active_v35_compute/run_v35.py" | sha256sum -c -
+          python -m py_compile research/active_v35_compute/run_v35.py
+      - name: Run Active V35 research
+        run: python research/active_v35_compute/run_v35.py --cache .cache/v33 --output artifacts/active_v35
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-v35-funding-dispersion
+          path: artifacts/active_v35
+          if-no-files-found: warn
+          retention-days: 30
