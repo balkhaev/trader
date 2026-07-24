@@ -1,0 +1,126 @@
+n"] for period in SEGMENTS
+            ),
+            "worst_extreme_segment": min(
+                rows["extreme"][period]["total_return"] for period in SEGMENTS
+            ),
+            "gates": GATES,
+        }
+        proof["selection_proof_sha256"] = hashlib.sha256(
+            json.dumps(proof, sort_keys=True, default=list).encode()
+        ).hexdigest()
+        proofs[experiment] = proof
+    (args.output / "selection_proof_before_final.json").write_text(
+        json.dumps(proofs, indent=2, default=list)
+    )
+
+    result_rows: list[dict] = []
+    accounts: dict[tuple[str, str, str], pd.DataFrame] = {}
+    for experiment, leader in leaders.items():
+        signal = signals[leader]
+        for scenario, bps in SCENARIOS.items():
+            for period in (*SEGMENTS, "prefinal", "final_2026_ytd", "full"):
+                account = simulate(
+                    dataset, signal, *PERIODS[period], bps, "spot", 1.0, cfg.forced_exit_bps
+                )
+                result_rows.append(
+                    {
+                        "experiment": experiment,
+                        "leader": leader,
+                        "scenario": scenario,
+                        "period": period,
+                        **metrics(account),
+                    }
+                )
+                accounts[(experiment, scenario, period)] = account
+    results = pd.DataFrame(result_rows)
+    results.to_csv(args.output / "metrics.csv", index=False)
+
+    def get(experiment: str, scenario: str, period: str) -> dict:
+        row = results[
+            (results.experiment == experiment)
+            & (results.scenario == scenario)
+            & (results.period == period)
+        ].iloc[0]
+        return row.to_dict()
+
+    summaries: dict[str, dict] = {}
+    promoted: list[str] = []
+    historical_candidates: list[str] = []
+    for experiment, leader in leaders.items():
+        pre_ok = bool(library[library.candidate == leader].iloc[0].eligible_before_final)
+        final_stress = get(experiment, "stress", "final_2026_ytd")
+        final_severe = get(experiment, "severe", "final_2026_ytd")
+        if pre_ok and final_stress["total_return"] > 0 and final_severe["total_return"] > 0:
+            status = "frozen_paper_forward_candidate"
+            promoted.append(experiment)
+        elif pre_ok and final_stress["total_return"] >= 0 and final_severe["total_return"] >= 0:
+            status = "historical_risk_candidate_needs_nonzero_forward"
+            historical_candidates.append(experiment)
+        else:
+            status = "rejected_or_needs_iteration"
+        full = accounts[(experiment, "stress", "full")]
+        full.to_csv(args.output / f"{experiment}_stress_full_equity.csv")
+        yearly(full).to_csv(args.output / f"{experiment}_yearly_stress.csv", index=False)
+        summaries[experiment] = {
+            "status": status,
+            "leader": leader,
+            "eligible_before_final": pre_ok,
+            "selection_proof_sha256": proofs[experiment]["selection_proof_sha256"],
+            "prefinal": get(experiment, "stress", "prefinal"),
+            "stress_full": get(experiment, "stress", "full"),
+            "stress_final": final_stress,
+            "severe_final": final_severe,
+            "strict_costs": {
+                scenario: {
+                    "full": get(experiment, scenario, "full"),
+                    "final": get(experiment, scenario, "final_2026_ytd"),
+                }
+                for scenario in SCENARIOS
+            },
+        }
+
+    bootstrap_rows: list[dict] = []
+    for experiment in books:
+        returns = accounts[(experiment, "stress", "prefinal")].equity.pct_change()
+        for block, horizon in itertools.product((30, 60, 120), (1095, 2190)):
+            bootstrap_rows.append(
+                {
+                    "experiment": experiment,
+                    **block_bootstrap(
+                        returns,
+                        block=block,
+                        horizon=horizon,
+                        seed=49000 + block + horizon,
+                    ),
+                }
+            )
+    pd.DataFrame(bootstrap_rows).to_csv(args.output / "block_bootstrap.csv", index=False)
+
+    summary = {
+        "candidate": "ACTIVE_V49_V50_ONCHAIN_RISK_BUDGET",
+        "selection_excludes_final": True,
+        "program_level_final_is_pristine": False,
+        "promoted_leaders": promoted,
+        "historical_candidates_needing_nonzero_forward": historical_candidates,
+        "leaders": summaries,
+        "data_quality": quality,
+        "decision": "The immutable DD floor is not weakened; zero-exposure final cannot prove forward edge.",
+    }
+    (args.output / "summary.json").write_text(json.dumps(summary, indent=2, default=list))
+    pd.DataFrame(manifest).to_csv(args.output / "data_manifest.csv", index=False)
+    (args.output / "provenance.json").write_text(
+        json.dumps(
+            {
+                "v44_v45_artifact": 8604664000,
+                "v46_artifact": 8604945072,
+                "v47_v48_artifact": 8606689835,
+                "v46_selection_proof": "a47d8edf2c43311c7cd096f9b9cd41983434f77cd40130cd5b4ba3d51855fe98",
+            },
+            indent=2,
+        )
+    )
+    print(json.dumps(summary, indent=2, default=list))
+
+
+if __name__ == "__main__":
+    main()
