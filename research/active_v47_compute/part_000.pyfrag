@@ -1,0 +1,166 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import itertools
+import json
+import sys
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+TREND_WINDOWS = (100, 150, 200, 250)
+VOL_WINDOWS = (30, 60, 90)
+VOL_TARGETS = (0.20, 0.30, 0.40)
+DRAWDOWN_WINDOWS = (180, 252, 365)
+DRAWDOWN_THRESHOLDS = (0.15, 0.20, 0.25, 0.30)
+DRAWDOWN_LOW_RISK = 0.25
+RECOVERY_FAST = (50, 100)
+RECOVERY_SLOW = (150, 200, 250)
+RECOVERY_EXIT_RETURNS = (-0.10, -0.15)
+
+GATES = {
+    "prefinal_cagr_min": 0.10,
+    "prefinal_sharpe_min": 0.75,
+    "prefinal_max_drawdown_min": -0.35,
+    "prefinal_turnover_max": 10.0,
+    "worst_severe_segment_min": -0.12,
+    "worst_extreme_segment_min": -0.20,
+}
+
+
+@dataclass(frozen=True)
+class RiskFamily:
+    name: str
+    description: str
+
+
+def completed_close(series: pd.Series) -> pd.Series:
+    """Shift one day so a close can affect only the next open target."""
+    return series.astype(float).shift(1)
+
+
+def trend_gate(close: pd.Series) -> pd.Series:
+    p = close.astype(float)
+    variants = []
+    for window in TREND_WINDOWS:
+        ma = p.rolling(window, min_periods=window).mean()
+        variants.append(((p > ma) & np.isfinite(ma)).astype(float).shift(1))
+    return pd.concat(variants, axis=1).mean(axis=1).fillna(0.0).clip(0.0, 1.0)
+
+
+def volatility_gate(close: pd.Series) -> pd.Series:
+    p = close.astype(float)
+    returns = np.log(p).diff()
+    variants = []
+    for window, target in itertools.product(VOL_WINDOWS, VOL_TARGETS):
+        vol = returns.rolling(window, min_periods=window).std(ddof=1) * np.sqrt(365.0)
+        scale = (target / vol.replace(0.0, np.nan)).clip(upper=1.0)
+        variants.append(scale.shift(1))
+    return pd.concat(variants, axis=1).mean(axis=1).fillna(0.0).clip(0.0, 1.0)
+
+
+def drawdown_gate(close: pd.Series) -> pd.Series:
+    p = close.astype(float)
+    variants = []
+    for window, threshold in itertools.product(DRAWDOWN_WINDOWS, DRAWDOWN_THRESHOLDS):
+        high = p.rolling(window, min_periods=window).max()
+        drawdown = p / high - 1.0
+        scale = pd.Series(
+            np.where(drawdown < -threshold, DRAWDOWN_LOW_RISK, 1.0),
+            index=p.index,
+            dtype=float,
+        )
+        scale[~np.isfinite(drawdown)] = 0.0
+        variants.append(scale.shift(1))
+    return pd.concat(variants, axis=1).mean(axis=1).fillna(0.0).clip(0.0, 1.0)
+
+
+def recovery_one(close: pd.Series, fast: int, slow: int, exit_return: float) -> pd.Series:
+    p = close.astype(float)
+    fast_ma = p.rolling(fast, min_periods=fast).mean()
+    slow_ma = p.rolling(slow, min_periods=slow).mean()
+    ret30 = p / p.shift(30) - 1.0
+    state = 0.0
+    out = np.zeros(len(p), dtype=float)
+    for i, (price, fma, sma, r30) in enumerate(zip(p.to_numpy(), fast_ma.to_numpy(), slow_ma.to_numpy(), ret30.to_numpy())):
+        if not all(np.isfinite(x) for x in (price, fma, sma, r30)):
+            state = 0.0
+        elif state <= 0.0:
+            if price > fma and r30 > 0.0:
+                state = 1.0
+        elif price < sma and r30 < exit_return:
+            state = 0.0
+        out[i] = state
+    return pd.Series(out, index=p.index).shift(1).fillna(0.0)
+
+
+def crash_recovery_gate(close: pd.Series) -> pd.Series:
+    variants = [
+        recovery_one(close, fast, slow, exit_ret)
+        for fast, slow, exit_ret in itertools.product(RECOVERY_FAST, RECOVERY_SLOW, RECOVERY_EXIT_RETURNS)
+    ]
+    return pd.concat(variants, axis=1).mean(axis=1).fillna(0.0).clip(0.0, 1.0)
+
+
+def build_risk_families(close: pd.Series) -> dict[str, pd.Series]:
+    return {
+        "trend": trend_gate(close),
+        "volatility": volatility_gate(close),
+        "drawdown": drawdown_gate(close),
+        "crash_recovery": crash_recovery_gate(close),
+    }
+
+
+def build_processes(base_signal: pd.Series, close: pd.Series) -> dict[str, pd.Series]:
+    gates = build_risk_families(close)
+    transformed = {name: base_signal.fillna(0.0).clip(0.0, 1.0) * gate for name, gate in gates.items()}
+    out: dict[str, pd.Series] = {}
+    names = tuple(transformed)
+    for count in range(1, len(names) + 1):
+        for combo in itertools.combinations(names, count):
+            out["+".join(combo)] = pd.concat([transformed[name] for name in combo], axis=1).mean(axis=1)
+    return out
+
+
+def load_v46(path: Path):
+    spec = importlib.util.spec_from_file_location("frozen_v46", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def eligible(rows: dict, pre: dict, segments: tuple[str, ...]) -> bool:
+    return bool(
+        pre["annualized_return"] >= GATES["prefinal_cagr_min"]
+        and pre["sharpe"] >= GATES["prefinal_sharpe_min"]
+        and pre["max_drawdown"] >= GATES["prefinal_max_drawdown_min"]
+        and pre["annual_turnover"] <= GATES["prefinal_turnover_max"]
+        and min(rows["stress"][period]["total_return"] for period in segments) > 0.0
+        and min(rows["severe"][period]["total_return"] for period in segments) > GATES["worst_severe_segment_min"]
+        and min(rows["extreme"][period]["total_return"] for period in segments) > GATES["worst_extreme_segment_min"]
+    )
+
+
+def score(rows: dict, pre: dict, segments: tuple[str, ...]) -> float:
+    return float(
+        pre["annualized_return"]
+        + 0.10 * pre["sharpe"]
+        + 0.20 * min(rows["stress"][period]["total_return"] for period in segments)
+        - 0.18 * abs(pre["max_drawdown"])
+        - 0.002 * pre["annual_turnover"]
+    )
+
+
+def run_self_test() -> None:
+    idx = pd.date_range("2018-01-01", periods=1200, freq="1D", tz="UTC")
+    rng = np.random.default_rng(47)
+    close = pd.Series(100.0 * np.exp(np.cumsum(rng.normal(0.0004, 0.025, len(idx)))), index=idx)
+    base = pd.Series(np.where(np.arange(len(idx)) % 19 < 11, 1.0, 0.0), index=idx)
+    books = build_processes(base, close)
+    assert l
