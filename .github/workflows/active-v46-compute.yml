@@ -1,0 +1,85 @@
+name: Active V46 execution-aware onchain compute
+
+on:
+  push:
+    branches: [agent/active-v44-v45-onchain]
+    paths:
+      - "research/active_v46_compute/**"
+      - ".github/workflows/active-v46-compute.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/active_v46_compute/**"
+      - ".github/workflows/active-v46-compute.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore pinned V44 market and onchain cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/v44
+          key: v44-coinmetrics-f1a36a-binance-btc-2015-2026-v1
+      - name: Reconstruct and verify V44 source
+        run: python research/active_v44_compute/bootstrap.py --extract-only
+      - name: Install dependencies
+        run: python -m pip install -r research/active_v44_compute/generated/requirements.txt
+      - name: Verify and compile V46 source
+        run: |
+          echo "c805f03f8ad10c52a8a6ec781ed8557eca1510e27af43aef6ec46fb366130f04  research/active_v46_compute/run_v46.py" | sha256sum -c -
+          python -m py_compile research/active_v46_compute/run_v46.py
+      - name: Run V46 execution transform self-test
+        run: |
+          python - <<'PY'
+          import importlib.util,sys
+          from pathlib import Path
+          import numpy as np,pandas as pd
+          p=Path('research/active_v46_compute/run_v46.py')
+          spec=importlib.util.spec_from_file_location('v46',p);m=importlib.util.module_from_spec(spec);sys.modules['v46']=m;spec.loader.exec_module(m)
+          idx=pd.date_range('2020-01-01',periods=200,freq='D',tz='UTC')
+          raw=pd.Series(np.clip(np.sin(np.arange(200)/11)*.55+.5,0,1),index=idx);raw.iloc[[10,50,110]]=0
+          books=m.build_books(raw);assert len(books)==15
+          for name,s in books.items():
+              assert ((s>=0)&(s<=1)).all(),name
+              raw2=raw.copy();raw2.iloc[-1]=1-raw2.iloc[-1]
+              s2=m.build_books(raw2)[name];assert np.allclose(s.iloc[:-1],s2.iloc[:-1]),name
+              for j in (10,50,110):assert abs(float(s.iloc[j]))<1e-12,(name,j,s.iloc[j])
+          print('V46 causal/range/zero-exit self-test passed')
+          PY
+      - name: Run full Active V46 research
+        id: research
+        continue-on-error: true
+        run: |
+          mkdir -p artifacts/active_v46
+          set -o pipefail
+          python research/active_v46_compute/run_v46.py --source research/active_v44_compute/generated --cache .cache/v44 --output artifacts/active_v46 2>&1 | tee artifacts/active_v46/run.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > artifacts/active_v46/run_exit_code.txt
+          exit "$code"
+      - name: Preserve exact source and provenance
+        if: always()
+        run: |
+          mkdir -p artifacts/active_v46/source
+          cp research/active_v46_compute/run_v46.py artifacts/active_v46/source/
+          echo "${{ steps.research.outcome }}" > artifacts/active_v46/workflow_research_outcome.txt
+          echo "${{ github.sha }}" > artifacts/active_v46/compute_commit.txt
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-v46-execution-aware-onchain
+          path: artifacts/active_v46
+          if-no-files-found: warn
+          retention-days: 30
