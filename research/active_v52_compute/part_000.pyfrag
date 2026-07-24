@@ -1,0 +1,191 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import math
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+BASE_MIXES: dict[str, dict[str, float]] = {
+    "exchange_only": {"exchange_pressure": 1.0},
+    "exchange75_cycle25": {"exchange_pressure": 0.75, "cycle_composite": 0.25},
+    "exchange50_cycle50": {"exchange_pressure": 0.50, "cycle_composite": 0.50},
+    "exchange75_valuation25": {"exchange_pressure": 0.75, "valuation_cycle": 0.25},
+    "exchange75_network25": {"exchange_pressure": 0.75, "network_activity": 0.25},
+    "exchange50_val25_net25": {
+        "exchange_pressure": 0.50,
+        "valuation_cycle": 0.25,
+        "network_activity": 0.25,
+    },
+    "exchange60_val20_net20": {
+        "exchange_pressure": 0.60,
+        "valuation_cycle": 0.20,
+        "network_activity": 0.20,
+    },
+    "cycle_only": {"cycle_composite": 1.0},
+}
+
+GATES = {
+    "prefinal_cagr_min": 0.08,
+    "prefinal_sharpe_min": 0.75,
+    "prefinal_max_drawdown_min": -0.30,
+    "prefinal_turnover_max": 4.0,
+    "worst_severe_segment_min": -0.12,
+    "worst_extreme_segment_min": -0.20,
+    "post_2020_cagr_min": 0.05,
+    "best_positive_year_log_share_max": 0.60,
+    "worst_leave_one_year_out_cagr_min": 0.02,
+}
+
+
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def weighted_base(book: dict[str, pd.Series], weights: dict[str, float]) -> pd.Series:
+    if not np.isclose(sum(weights.values()), 1.0):
+        raise ValueError(weights)
+    parts = []
+    for name, weight in weights.items():
+        if name not in book:
+            raise KeyError(name)
+        parts.append(book[name].fillna(0.0).clip(0.0, 1.0) * float(weight))
+    return pd.concat(parts, axis=1).sum(axis=1).clip(0.0, 1.0)
+
+
+def build_signal(base: pd.Series, close: pd.Series, v46, v49) -> pd.Series:
+    confirmation = v46.build_books(base)["confirmation"]
+    return v49.build_v50_processes(confirmation, close)["vol95_x_recovery"].clip(0.0, 1.0)
+
+
+def annualized(returns: pd.Series) -> float:
+    r = returns.dropna()
+    if r.empty:
+        return 0.0
+    growth = float((1.0 + r).prod())
+    years = len(r) / 365.0
+    return growth ** (1.0 / years) - 1.0 if growth > 0 and years > 0 else -1.0
+
+
+def concentration(account: pd.DataFrame) -> dict:
+    daily = account.equity.pct_change().fillna(0.0)
+    yearly = []
+    for year, group in daily.groupby(daily.index.year):
+        yearly.append({"year": int(year), "return": float((1.0 + group).prod() - 1.0)})
+    yearly_df = pd.DataFrame(yearly)
+    positive_logs = [math.log1p(x) for x in yearly_df["return"] if x > 0]
+    best_share = max(positive_logs) / sum(positive_logs) if positive_logs and sum(positive_logs) > 0 else 0.0
+    loo = []
+    for year in yearly_df.year:
+        subset = daily[daily.index.year != int(year)]
+        loo.append({"excluded_year": int(year), "cagr": annualized(subset)})
+    loo_df = pd.DataFrame(loo)
+    post = daily[(daily.index >= pd.Timestamp("2021-01-01", tz="UTC")) & (daily.index < pd.Timestamp("2026-01-01", tz="UTC"))]
+    return {
+        "yearly": yearly,
+        "post_2020_cagr": annualized(post),
+        "best_positive_year_log_share": float(best_share),
+        "worst_leave_one_year_out_cagr": float(loo_df.cagr.min()) if not loo_df.empty else 0.0,
+        "leave_one_year_out": loo,
+    }
+
+
+def eligible(rows: dict, pre: dict, conc: dict, segments: tuple[str, ...]) -> bool:
+    return bool(
+        pre["annualized_return"] >= GATES["prefinal_cagr_min"]
+        and pre["sharpe"] >= GATES["prefinal_sharpe_min"]
+        and pre["max_drawdown"] >= GATES["prefinal_max_drawdown_min"]
+        and pre["annual_turnover"] <= GATES["prefinal_turnover_max"]
+        and min(rows["stress"][p]["total_return"] for p in segments) > 0.0
+        and min(rows["severe"][p]["total_return"] for p in segments) > GATES["worst_severe_segment_min"]
+        and min(rows["extreme"][p]["total_return"] for p in segments) > GATES["worst_extreme_segment_min"]
+        and conc["post_2020_cagr"] >= GATES["post_2020_cagr_min"]
+        and conc["best_positive_year_log_share"] <= GATES["best_positive_year_log_share_max"]
+        and conc["worst_leave_one_year_out_cagr"] >= GATES["worst_leave_one_year_out_cagr_min"]
+    )
+
+
+def score(rows: dict, pre: dict, conc: dict, segments: tuple[str, ...]) -> float:
+    return float(
+        pre["annualized_return"]
+        + 0.10 * pre["sharpe"]
+        + 0.20 * conc["post_2020_cagr"]
+        + 0.10 * min(rows["stress"][p]["total_return"] for p in segments)
+        - 0.15 * abs(pre["max_drawdown"])
+        - 0.002 * pre["annual_turnover"]
+        - 0.08 * conc["best_positive_year_log_share"]
+    )
+
+
+def self_test() -> None:
+    idx = pd.date_range("2016-01-01", periods=1800, freq="1D", tz="UTC")
+    rng = np.random.default_rng(52)
+    book = {
+        name: pd.Series(np.clip(rng.normal(0.5, 0.25, len(idx)), 0.0, 1.0), index=idx)
+        for name in ("exchange_pressure", "cycle_composite", "valuation_cycle", "network_activity")
+    }
+    close = pd.Series(100.0 * np.exp(np.cumsum(rng.normal(0.0004, 0.025, len(idx)))), index=idx)
+
+    class V46:
+        @staticmethod
+        def build_books(signal):
+            confirmed = (signal.rolling(3, min_periods=3).mean() >= 0.5).astype(float)
+            return {"confirmation": confirmed}
+
+    class V49:
+        @staticmethod
+        def build_v50_processes(signal, px):
+            vol = np.log(px).diff().rolling(30, min_periods=30).std() * np.sqrt(365.0)
+            risk = (0.285 / vol.replace(0.0, np.nan)).clip(upper=1.0).shift(1).fillna(0.0)
+            return {"vol95_x_recovery": signal * risk}
+
+    signals = {}
+    for name, weights in BASE_MIXES.items():
+        base = weighted_base(book, weights)
+        signals[name] = build_signal(base, close, V46, V49)
+        assert ((signals[name] >= 0.0) & (signals[name] <= 1.0)).all()
+    changed = close.copy()
+    changed.iloc[-1] *= 9.0
+    for name, weights in BASE_MIXES.items():
+        changed_signal = build_signal(weighted_base(book, weights), changed, V46, V49)
+        assert np.allclose(signals[name], changed_signal, equal_nan=True), name
+    print("Active V52 diversified on-chain base self-test passed")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--v44-source", type=Path)
+    parser.add_argument("--v46-source", type=Path)
+    parser.add_argument("--v49-source", type=Path)
+    parser.add_argument("--cache", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+    if args.self_test:
+        self_test()
+        return
+    if None in (args.v44_source, args.v46_source, args.v49_source, args.cache, args.output):
+        raise SystemExit("all source/cache/output arguments are required")
+
+    args.output.mkdir(parents=True, exist_ok=True)
+    sys.path.insert(0, str(args.v44_source.resolve()))
+    from config import Config, PERIODS, SCENARIOS, SEGMENTS
+    from data import load
+    from metrics import metrics, yearly
+    from strategy import build_families, simulate
+
+    v46 = load_module("frozen_v46_v52", args.v46_source.resolve())
+    v49 = load_module("frozen_v49_v52", args.v49_source.resolve())
+    cfg = Config()
+    dataset, quality, manifest = lo
