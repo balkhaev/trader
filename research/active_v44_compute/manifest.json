@@ -1,0 +1,32 @@
+{
+  "format": "base64(tar.bz2)",
+  "parts": [
+    {"path":"chunk_000","bytes":1000,"sha256":"5a654bb465908747ccce850f1c04d75d80e8d02b794092c3a0e8b34b1c6310f0"},
+    {"path":"chunk_001","bytes":1000,"sha256":"8b9b630eaa11da84a6e160010e1cadaed8f0695ba611062802cfaeb0f7798803"},
+    {"path":"chunk_002","bytes":1000,"sha256":"7d477f25d9edb1ac82557594f96d6184f59c19314ae20ea6fb3ce1c95c111027"},
+    {"path":"chunk_003","bytes":1000,"sha256":"7a5b7c6f36a96e3c5ab67cbde67bcb300b435dfc90f2d84a14753b9b4b2fcdad"},
+    {"path":"chunk_004","bytes":1000,"sha256":"1f151f8b44a632b13abb8e3163e2bb75af8a9f3a4aba531ab51580a322394fd5"},
+    {"path":"chunk_005","bytes":1000,"sha256":"2c51c293ad08ad6dbfcf839cd5c14d5cb58c48d87b98cb1657e274358297bcf7"},
+    {"path":"chunk_006","bytes":1000,"sha256":"30dd67a35f4b714a2dd12d415176e7ea61512e3d3209f1daaf1de52905b4330c"},
+    {"path":"chunk_007","bytes":1000,"sha256":"25c2f7b4258fa6685410af6321e02a6e7f3e203b14282fad785013ffe82cd9bd"},
+    {"path":"chunk_008","bytes":1000,"sha256":"0402522ffd106cf1e67cbe89a12ba9fcc16599d90efde4cd5d5678926694bd7c"},
+    {"path":"chunk_009","bytes":1000,"sha256":"0dc88e95398e62826f3e7ec6443fa7a0aa361c4b9210bad568c07c442af16612"},
+    {"path":"chunk_010","bytes":1000,"sha256":"6532e8623206c1193e559f0cb820e05fd64d3abaf82ef9858155be4e168c8781"},
+    {"path":"chunk_011","bytes":1000,"sha256":"9f10be64243bc57e8cb6fc599415d04d761eaa57ddf53bd4cc35d44efa27b79d"},
+    {"path":"chunk_012","bytes":764,"sha256":"fbdbe0a70c78f9bbd805577a6d20fa70dfadcc55f8dd63355000ff7048fe9cd3"}
+  ],
+  "encoded_bytes":12764,
+  "encoded_sha256":"694669ddeea275667de4ddb9553023bd2ca884e9e0ffaeb329985ef9497d9aff",
+  "archive_bytes":9573,
+  "archive_sha256":"3a3050a4972395016be3a73c5dcd0b4a24a59ff30a212421e0630cbd36949485",
+  "source_files":{
+    "config.py":{"bytes":1517,"sha256":"b81ab559748748d8eef0483735c1807945bd75072e11c550231604c404655f72"},
+    "data.py":{"bytes":9106,"sha256":"653c9a53dd797a13651166828ad54ee506a56101d3b4bf9b8a8ae5738b7cfb8c"},
+    "metrics.py":{"bytes":2829,"sha256":"43acfda5d262a6b4cdcae1310393b5cce1e81ee7ceb3bfa1f0c205018bf43d73"},
+    "requirements.txt":{"bytes":27,"sha256":"6979eeaed30ec7f45ff725f33240136e49c396fdf8a5ef12964fb2960c8a5d1e"},
+    "run.py":{"bytes":7854,"sha256":"befcf463ae394551cb06091fdcc2d4462cfd1fa6db79f6bc8336c420a04ed902"},
+    "strategy.py":{"bytes":6691,"sha256":"89db2bbd917ce546e29ed9dc6435cfc8fc7749e778215b18c25e99a4997e14bb"}
+  },
+  "coinmetrics_commit":"f1a36afb962731c387bb03982758ab0103063da5",
+  "coinmetrics_blob_sha":"5e50f336d268e1f3a38e9885b5aaef36de529700"
+}
