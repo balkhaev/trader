@@ -1,0 +1,49 @@
+name: V43 delivery basis data export
+
+on:
+  push:
+    branches:
+      - agent/v43-delivery-basis-data
+    paths:
+      - "research/v43_delivery_export/**"
+      - ".github/workflows/v43-delivery-export.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "research/v43_delivery_export/**"
+      - ".github/workflows/v43-delivery-export.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Reconstruct and verify source
+        run: python research/v43_delivery_export/bootstrap.py --extract-only
+      - name: Install dependencies
+        run: python -m pip install -r research/v43_delivery_export/generated/requirements.txt
+      - name: Compile source
+        run: python -m py_compile research/v43_delivery_export/generated/export_delivery.py
+      - name: Deterministic self-test
+        run: python research/v43_delivery_export/bootstrap.py --self-test
+      - name: Export checksum-audited delivery panel
+        run: python research/v43_delivery_export/bootstrap.py --output artifacts/v43_delivery
+      - name: Upload delivery data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v43-delivery-basis-data
+          path: artifacts/v43_delivery
+          if-no-files-found: warn
+          retention-days: 30
