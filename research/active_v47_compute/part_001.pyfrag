@@ -1,0 +1,129 @@
+en(books) == 15
+    assert all(((signal >= 0.0) & (signal <= 1.0)).all() for signal in books.values())
+    changed = close.copy()
+    changed.iloc[-1] *= 9.0
+    books_changed = build_processes(base, changed)
+    for name in books:
+        # A modified final close may only affect a target after the available sample.
+        assert np.allclose(books[name].to_numpy(), books_changed[name].to_numpy(), equal_nan=True), name
+    print("Active V47 causal risk-layer self-test passed")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", type=Path)
+    parser.add_argument("--v46-source", type=Path)
+    parser.add_argument("--cache", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+    if args.self_test:
+        run_self_test()
+        return
+    if None in (args.source, args.v46_source, args.cache, args.output):
+        raise SystemExit("--source, --v46-source, --cache and --output are required")
+    args.output.mkdir(parents=True, exist_ok=True)
+    sys.path.insert(0, str(args.source.resolve()))
+    from config import Config, PERIODS, SCENARIOS, SEGMENTS
+    from data import load
+    from metrics import block_bootstrap, metrics, yearly
+    from strategy import build_families, simulate
+
+    cfg = Config()
+    dataset, manifest, quality = load(cfg, args.cache)
+    spot, _ = build_families(dataset)
+    raw_v44 = spot["exchange_pressure"]
+    frozen_v46 = load_v46(args.v46_source.resolve())
+    v46_confirmation = frozen_v46.build_books(raw_v44)["confirmation"]
+    bases = {"v44_raw": raw_v44, "v46_confirmation": v46_confirmation}
+
+    library_rows: list[dict] = []
+    evidence: dict[str, dict] = {}
+    signals: dict[str, pd.Series] = {}
+    for base_name, base_signal in bases.items():
+        for policy_name, signal in build_processes(base_signal, dataset.spot_close.ffill()).items():
+            candidate = f"{base_name}:{policy_name}"
+            rows = {scenario: {} for scenario in ("stress", "severe", "extreme")}
+            for scenario in rows:
+                for period in (*SEGMENTS, "prefinal"):
+                    account = simulate(
+                        dataset,
+                        signal,
+                        *PERIODS[period],
+                        SCENARIOS[scenario],
+                        "spot",
+                        1.0,
+                        cfg.forced_exit_bps,
+                    )
+                    rows[scenario][period] = metrics(account)
+            pre = rows["stress"]["prefinal"]
+            is_eligible = eligible(rows, pre, SEGMENTS)
+            candidate_score = score(rows, pre, SEGMENTS)
+            library_rows.append(
+                {
+                    "candidate": candidate,
+                    "base": base_name,
+                    "policy": policy_name,
+                    "eligible_before_final": is_eligible,
+                    "score": candidate_score,
+                    **{f"prefinal_{key}": value for key, value in pre.items()},
+                    "worst_stress_segment": min(rows["stress"][period]["total_return"] for period in SEGMENTS),
+                    "worst_severe_segment": min(rows["severe"][period]["total_return"] for period in SEGMENTS),
+                    "worst_extreme_segment": min(rows["extreme"][period]["total_return"] for period in SEGMENTS),
+                }
+            )
+            evidence[candidate] = rows
+            signals[candidate] = signal
+
+    library = pd.DataFrame(library_rows).sort_values(
+        ["eligible_before_final", "score"], ascending=[False, False]
+    )
+    library.to_csv(args.output / "selection_library.csv", index=False)
+
+    leaders: dict[str, str] = {}
+    proofs: dict[str, dict] = {}
+    for base_name in bases:
+        subset = library[library.base == base_name]
+        leader = str(subset.iloc[0].candidate)
+        leaders[base_name] = leader
+        rows = evidence[leader]
+        pre = rows["stress"]["prefinal"]
+        proof = {
+            "candidate": "ACTIVE_V47_V48_ONCHAIN_RISK_LAYER",
+            "base": base_name,
+            "selection_excludes_final": True,
+            "program_level_final_is_pristine": False,
+            "immutable_source": "V44 exchange_pressure / V46 confirmation",
+            "risk_families": {
+                "trend_windows": TREND_WINDOWS,
+                "volatility_windows": VOL_WINDOWS,
+                "volatility_targets": VOL_TARGETS,
+                "drawdown_windows": DRAWDOWN_WINDOWS,
+                "drawdown_thresholds": DRAWDOWN_THRESHOLDS,
+                "drawdown_low_risk": DRAWDOWN_LOW_RISK,
+                "recovery_fast": RECOVERY_FAST,
+                "recovery_slow": RECOVERY_SLOW,
+                "recovery_exit_returns": RECOVERY_EXIT_RETURNS,
+            },
+            "process_count": int(len(subset)),
+            "leader": leader,
+            "eligible_before_final": bool(subset.iloc[0].eligible_before_final),
+            "score": float(subset.iloc[0].score),
+            "prefinal": pre,
+            "all_stress_segments_positive": min(rows["stress"][period]["total_return"] for period in SEGMENTS) > 0.0,
+            "worst_severe_segment": min(rows["severe"][period]["total_return"] for period in SEGMENTS),
+            "worst_extreme_segment": min(rows["extreme"][period]["total_return"] for period in SEGMENTS),
+            "gates": GATES,
+        }
+        proof["selection_proof_sha256"] = hashlib.sha256(
+            json.dumps(proof, sort_keys=True, default=list).encode()
+        ).hexdigest()
+        proofs[base_name] = proof
+    (args.output / "selection_proof_before_final.json").write_text(json.dumps(proofs, indent=2, default=list))
+
+    result_rows: list[dict] = []
+    accounts: dict[tuple[str, str, str], pd.DataFrame] = {}
+    for base_name, leader in leaders.items():
+        signal = signals[leader]
+        for scenario, bps in SCENARIOS.items():
+            for period in (*SEGMENTS, "prefi
