@@ -1,0 +1,106 @@
+ad(cfg, args.cache)
+    spot, _ = build_families(dataset)
+    close = dataset.spot_close.ffill()
+
+    signals = {
+        name: build_signal(weighted_base(spot, weights), close, v46, v49)
+        for name, weights in BASE_MIXES.items()
+    }
+    library_rows = []
+    evidence: dict[str, dict] = {}
+    concentration_evidence: dict[str, dict] = {}
+    for name, signal in signals.items():
+        rows = {scenario: {} for scenario in ("stress", "severe", "extreme")}
+        accounts = {}
+        for scenario in rows:
+            for period in (*SEGMENTS, "prefinal"):
+                account = simulate(dataset, signal, *PERIODS[period], SCENARIOS[scenario], "spot", 1.0, cfg.forced_exit_bps)
+                rows[scenario][period] = metrics(account)
+                accounts[(scenario, period)] = account
+        pre = rows["stress"]["prefinal"]
+        conc = concentration(accounts[("stress", "prefinal")])
+        ok = eligible(rows, pre, conc, SEGMENTS)
+        library_rows.append({
+            "candidate": name,
+            "eligible_before_final": ok,
+            "score": score(rows, pre, conc, SEGMENTS),
+            **{f"prefinal_{key}": value for key, value in pre.items()},
+            "post_2020_cagr": conc["post_2020_cagr"],
+            "best_positive_year_log_share": conc["best_positive_year_log_share"],
+            "worst_leave_one_year_out_cagr": conc["worst_leave_one_year_out_cagr"],
+            "worst_stress_segment": min(rows["stress"][p]["total_return"] for p in SEGMENTS),
+            "worst_severe_segment": min(rows["severe"][p]["total_return"] for p in SEGMENTS),
+            "worst_extreme_segment": min(rows["extreme"][p]["total_return"] for p in SEGMENTS),
+        })
+        evidence[name] = rows
+        concentration_evidence[name] = conc
+
+    library = pd.DataFrame(library_rows).sort_values(["eligible_before_final", "score"], ascending=[False, False])
+    library.to_csv(args.output / "selection_library.csv", index=False)
+    leader = str(library.iloc[0].candidate)
+    leader_row = library.iloc[0]
+    proof = {
+        "candidate": "ACTIVE_V52_DIVERSIFIED_ONCHAIN_BASE",
+        "selection_excludes_final": True,
+        "program_level_final_is_pristine": False,
+        "immutable_execution": "V46 confirmation",
+        "immutable_risk": "V50 vol95_x_recovery",
+        "base_mixes": BASE_MIXES,
+        "gates": GATES,
+        "leader": leader,
+        "eligible_before_final": bool(leader_row.eligible_before_final),
+        "score": float(leader_row.score),
+        "prefinal": evidence[leader]["stress"]["prefinal"],
+        "concentration": concentration_evidence[leader],
+    }
+    proof["selection_proof_sha256"] = hashlib.sha256(json.dumps(proof, sort_keys=True, default=list).encode()).hexdigest()
+    (args.output / "selection_proof_before_final.json").write_text(json.dumps(proof, indent=2, default=list))
+
+    result_rows = []
+    accounts = {}
+    signal = signals[leader]
+    for scenario, bps in SCENARIOS.items():
+        for period in (*SEGMENTS, "prefinal", "final_2026_ytd", "full"):
+            account = simulate(dataset, signal, *PERIODS[period], bps, "spot", 1.0, cfg.forced_exit_bps)
+            result_rows.append({"scenario": scenario, "period": period, **metrics(account)})
+            accounts[(scenario, period)] = account
+    results = pd.DataFrame(result_rows)
+    results.to_csv(args.output / "metrics.csv", index=False)
+    stress_full = accounts[("stress", "full")]
+    stress_full.to_csv(args.output / "stress_full_equity.csv")
+    yearly(stress_full).to_csv(args.output / "yearly_stress.csv", index=False)
+
+    def get(scenario: str, period: str) -> dict:
+        return results[(results.scenario == scenario) & (results.period == period)].iloc[0].to_dict()
+
+    pre_ok = bool(leader_row.eligible_before_final)
+    final_stress = get("stress", "final_2026_ytd")
+    final_severe = get("severe", "final_2026_ytd")
+    if pre_ok and final_stress["total_return"] > 0 and final_severe["total_return"] > 0 and final_stress["average_gross"] > 0.001:
+        status = "frozen_paper_forward_candidate"
+    elif pre_ok and final_stress["total_return"] >= 0 and final_severe["total_return"] >= 0:
+        status = "historical_risk_candidate_needs_nonzero_forward"
+    else:
+        status = "rejected_or_needs_iteration"
+    summary = {
+        "candidate": "ACTIVE_V52_DIVERSIFIED_ONCHAIN_BASE",
+        "status": status,
+        "leader": leader,
+        "eligible_before_final": pre_ok,
+        "selection_proof_sha256": proof["selection_proof_sha256"],
+        "prefinal": get("stress", "prefinal"),
+        "concentration": concentration_evidence[leader],
+        "stress_full": get("stress", "full"),
+        "stress_final": final_stress,
+        "severe_final": final_severe,
+        "strict_costs": {scenario: {"full": get(scenario, "full"), "final": get(scenario, "final_2026_ytd")} for scenario in SCENARIOS},
+        "data_quality": quality,
+        "decision": "No change to V46 execution or V50 risk layer; only predeclared on-chain family mixtures were compared.",
+    }
+    (args.output / "summary.json").write_text(json.dumps(summary, indent=2, default=list))
+    pd.DataFrame(manifest).to_csv(args.output / "data_manifest.csv", index=False)
+    print(json.dumps(summary, indent=2, default=list))
+
+
+if __name__ == "__main__":
+    main()
