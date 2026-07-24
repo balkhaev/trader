@@ -1,4 +1,14 @@
-n"] for period in SEGMENTS
+            "recovery_exit_returns": RECOVERY_EXIT_RETURNS,
+            "process_count": int(len(subset)),
+            "leader": leader,
+            "eligible_before_final": bool(subset.iloc[0].eligible_before_final),
+            "score": float(subset.iloc[0].score),
+            "prefinal": pre,
+            "all_stress_segments_positive": min(
+                rows["stress"][period]["total_return"] for period in SEGMENTS
+            ) > 0.0,
+            "worst_severe_segment": min(
+                rows["severe"][period]["total_return"] for period in SEGMENTS
             ),
             "worst_extreme_segment": min(
                 rows["extreme"][period]["total_return"] for period in SEGMENTS
