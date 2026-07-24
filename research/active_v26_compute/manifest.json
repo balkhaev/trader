@@ -1,6 +1,6 @@
 {
-  "parts": 3,
-  "payload_dir": "payload_v4",
+  "parts": 13,
+  "payload_dir": "payload_v5",
   "encoded_bytes": 12936,
   "encoded_sha256": "5c281cce6c194dcd11bc5c5270d699098b652a85bae76d8786f148bef1bcdf81",
   "archive_bytes": 9701,
@@ -11,8 +11,18 @@
     "README.md": "33412497e0b36ffb25ade2ca870270b15cc455167285e31d95cb97b39bcf2f66"
   },
   "part_files": [
-    {"path":"part_00.b64","bytes":6000,"sha256":"8df9b23a0fef571e9e0cf3da4dc87b6cdadbcbf54b2474f0b115137f21a85865"},
-    {"path":"part_01.b64","bytes":6000,"sha256":"7e83d445ac8c7b8e2867ecf3ee812677d20b4739579a5fc8546a98c15225e83c"},
-    {"path":"part_02.b64","bytes":936,"sha256":"1c088165b7af86e026b6bd05a1a9a21f096b882a20665db5284802765277f497"}
+    {"path":"part_00.b64","bytes":1000,"sha256":"593fa07244c3a7a231f6414dbdb001b9da046bd00cdb719e4b6da992d099e0e9"},
+    {"path":"part_01.b64","bytes":1000,"sha256":"e89c685283b2b37a0b03dc7887b4e1cdc0f6d0b1ca754e581c789d45171d5ba5"},
+    {"path":"part_02.b64","bytes":1000,"sha256":"a69f3ad40e6bc64a02780957d2d8dd18d7fde946ac70aaee9698d25993a70fd3"},
+    {"path":"part_03.b64","bytes":1000,"sha256":"556b4255ebb73fe50a1f1be5511c82faee41234bcd15fadf098174c68f7e03c7"},
+    {"path":"part_04.b64","bytes":1000,"sha256":"177f06b7533637bac86e25d6b747d2a66ac580abebb5fce9c3650144b4edb5cd"},
+    {"path":"part_05.b64","bytes":1000,"sha256":"879f901d6c7002348343129f881a4295e6a9336fb664cf7881a54d7ce364f445"},
+    {"path":"part_06.b64","bytes":1000,"sha256":"54606647fcd8d6ac41f301270dce1a11be235d7f27ae2f0a9bae1c524b5e97c8"},
+    {"path":"part_07.b64","bytes":1000,"sha256":"1cdffd502fe84bf711fe52daed37e647bba689430c6f85196fc9cbe75cbd2c73"},
+    {"path":"part_08.b64","bytes":1000,"sha256":"09eb4dfc4745d1edd741d5f984ff265b29448de184510ecce8ec4e643d9165a8"},
+    {"path":"part_09.b64","bytes":1000,"sha256":"d06b51b730f4fae27d58f7b8b5e84220ec3ee7f522af3a290d674928465fc671"},
+    {"path":"part_10.b64","bytes":1000,"sha256":"5b93e266072bc5f17f1cd8a7404f586e2073d908865ff8d81595184095d027dc"},
+    {"path":"part_11.b64","bytes":1000,"sha256":"2ff2aef461233977cf9b3deae12e99715f99eb41d260bfa9a6f5345f1d016f03"},
+    {"path":"part_12.b64","bytes":936,"sha256":"1c088165b7af86e026b6bd05a1a9a21f096b882a20665db5284802765277f497"}
   ]
 }
