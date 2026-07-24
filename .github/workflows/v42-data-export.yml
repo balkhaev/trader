@@ -1,0 +1,57 @@
+name: V42 multi-asset carry data export
+
+on:
+  push:
+    branches:
+      - agent/v42-multiasset-carry-data
+    paths:
+      - "research/v42_data_export/**"
+      - ".github/workflows/v42-data-export.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "research/v42_data_export/**"
+      - ".github/workflows/v42-data-export.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/v42_data
+          key: binance-v42-spot-perp-funding-2020-2026
+      - name: Reconstruct and verify source
+        run: python research/v42_data_export/bootstrap.py --extract-only
+      - name: Install dependencies
+        run: python -m pip install -r research/v42_data_export/generated/requirements.txt
+      - name: Compile source
+        run: python -m py_compile research/v42_data_export/generated/export.py
+      - name: Deterministic self-test
+        run: python research/v42_data_export/bootstrap.py --self-test
+      - name: Export checksum-audited panel
+        run: |
+          python research/v42_data_export/bootstrap.py \
+            --output artifacts/v42_data \
+            --cache .cache/v42_data
+      - name: Upload data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v42-multiasset-carry-data
+          path: artifacts/v42_data
+          if-no-files-found: warn
+          retention-days: 30
