@@ -1,0 +1,38 @@
+t_2020_cagr": float(post.annualized_return),
+                "severe_prefinal_cagr": float(pick("severe", "prefinal_2019_2025").annualized_return),
+                "extreme_prefinal_cagr": float(pick("extreme", "prefinal_2019_2025").annualized_return),
+                "final_total_return": float(pick("stress", "final_2026_ytd").total_return),
+                "final_average_gross": float(pick("stress", "final_2026_ytd").average_gross),
+            })
+    lag = pd.DataFrame(summary_rows); lag.to_csv(args.output / "lag_delay_summary.csv", index=False)
+    exact = lag[(lag.extra_publication_lag_days == 0) & (lag.extra_execution_delay_days == 0)].iloc[0]
+    checks = {
+        "all_lag_prefinal_positive": bool((lag.prefinal_cagr > 0).all()),
+        "publication_lag_cagr_floor_gt_10pct": float(lag[lag.extra_execution_delay_days == 0].prefinal_cagr.min()) > 0.10,
+        "execution_delay_cagr_floor_gt_10pct": float(lag[lag.extra_publication_lag_days == 0].prefinal_cagr.min()) > 0.10,
+        "post_2020_cagr_gt_6pct": float(exact.post_2020_cagr) > 0.06,
+        "best_positive_year_log_share_lt_60pct": conc["best_positive_year_log_growth_share"] < 0.60,
+        "worst_leave_one_year_out_cagr_gt_5pct": conc["worst_leave_one_year_out_cagr"] > 0.05,
+        "reverse_has_nonzero_exposure": float(exact.reverse_average_gross) > 0.001,
+        "final_has_nonzero_exposure": float(exact.final_average_gross) > 0.001,
+    }
+    status = "robust_nonzero_forward_candidate" if all(checks.values()) else "historically_robust_but_forward_unproven" if all(v for k, v in checks.items() if k not in ("reverse_has_nonzero_exposure", "final_has_nonzero_exposure")) else "historical_concentration_or_latency_concern"
+    summary = {
+        "candidate": "ACTIVE_V53_IMMUTABLE_V52_ROBUSTNESS_AUDIT",
+        "status": status,
+        "parameters_changed": False,
+        "exact_v52": {"base_weights": BASE_WEIGHTS, "execution": "V46 confirmation", "risk": "V50 vol95_x_recovery"},
+        "checks": checks,
+        "exact_metrics": exact.to_dict(),
+        "publication_lag_cagr_floor": float(lag[lag.extra_execution_delay_days == 0].prefinal_cagr.min()),
+        "execution_delay_cagr_floor": float(lag[lag.extra_publication_lag_days == 0].prefinal_cagr.min()),
+        "contribution": conc,
+        "data_quality": quality,
+    }
+    (args.output / "summary.json").write_text(json.dumps(summary, indent=2, default=float))
+    pd.DataFrame(manifest).to_csv(args.output / "data_manifest.csv", index=False)
+    print(json.dumps(summary, indent=2, default=float))
+
+
+if __name__ == "__main__":
+    main()
