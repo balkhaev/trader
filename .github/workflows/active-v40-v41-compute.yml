@@ -1,0 +1,58 @@
+name: Active V40-V41 flow liquidity compute
+
+on:
+  push:
+    branches: [agent/active-v40-v41-flow-liquidity]
+    paths:
+      - "research/active_v40_compute/**"
+      - ".github/workflows/active-v40-v41-compute.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/active_v40_compute/**"
+      - ".github/workflows/active-v40-v41-compute.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore exact 8h Binance cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/v33
+          key: binance-v33-fixed-universe-8h-2020-2026
+          restore-keys: |
+            binance-v33-fixed-universe-8h-2020-2026
+      - name: Reconstruct and verify source
+        run: python research/active_v40_compute/bootstrap.py --extract-only
+      - name: Install dependencies
+        run: python -m pip install -r research/active_v40_compute/generated/requirements.txt
+      - name: Compile source
+        run: python -m py_compile research/active_v40_compute/generated/*.py
+      - name: Run deterministic causal self-test
+        run: python research/active_v40_compute/bootstrap.py --self-test
+      - name: Run full Active V40-V41 research
+        run: python research/active_v40_compute/bootstrap.py --cache .cache/v33 --output artifacts/active_v40_v41
+      - name: Preserve source and manifest
+        if: always()
+        run: |
+          mkdir -p artifacts/active_v40_v41/source
+          cp research/active_v40_compute/generated/* artifacts/active_v40_v41/source/ || true
+          cp research/active_v40_compute/manifest.json artifacts/active_v40_v41/source_payload_manifest.json
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-v40-v41-flow-liquidity
+          path: artifacts/active_v40_v41
+          if-no-files-found: warn
+          retention-days: 30
