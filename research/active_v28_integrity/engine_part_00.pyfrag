@@ -1,0 +1,55 @@
+from __future__ import annotations
+from dataclasses import dataclass, asdict, replace
+from pathlib import Path
+import sys, json, time
+import numpy as np
+import pandas as pd
+from pandas.tseries.holiday import USFederalHolidayCalendar
+from pandas.tseries.offsets import CustomBusinessDay
+
+ROOT=Path('/mnt/data/v26_work/active_v26'); V8=ROOT/'v8_frozen'
+sys.path.insert(0,str(ROOT));sys.path.insert(0,str(V8));sys.path.insert(0,'/mnt/data')
+import inputs as v8inputs
+import signals as v8signals
+import engine as v8engine
+from execution_policy import mean_transforms,SPOT_SELECTED,PERP_SELECTED
+from v35_funding_carry import CarryPolicy,build_signal
+from v36_cash_carry import CashPolicy,POLICIES as CASH_POLICIES,PERIODS,SEGMENTS,SCENARIOS,MONTHLY_RATES
+
+OUT=Path('/mnt/data/v43');OUT.mkdir(exist_ok=True)
+CARRY_POLICIES=[
+ CarryPolicy(30,.08,0.,0.,.30,7,'equal',0),
+ CarryPolicy(30,.12,0.,0.,.30,7,'equal',0),
+ CarryPolicy(45,.08,0.,0.,.30,7,'equal',0),
+ CarryPolicy(45,.12,0.,0.,.30,7,'equal',0),
+]
+CASH=next(x for x in CASH_POLICIES if x.name=='upper_b1_14d')
+USBD=CustomBusinessDay(calendar=USFederalHolidayCalendar())
+
+@dataclass(frozen=True)
+class AuditPolicy:
+ name:str
+ positive_funding_haircut:float=1.0
+ suppress_first_intraday_funding_on_carry_entry:bool=False
+ margin_multiple:float=1.0
+AUDITS=(
+ AuditPolicy('exact'),
+ AuditPolicy('fund80',.8),
+ AuditPolicy('fund60',.6),
+ AuditPolicy('entry_delay8h',1.,True),
+ AuditPolicy('fund80_margin125',.8,False,1.25),
+)
+
+@dataclass
+class Ctx:
+ index:pd.DatetimeIndex
+ so:np.ndarray;sc:np.ndarray;av:np.ndarray
+ spot_signal:np.ndarray;perp_signal:np.ndarray;carry_signal:np.ndarray
+ o8:np.ndarray;c8:np.ndarray;f8:np.ndarray
+ symbols:tuple;pair_symbols:tuple;pair_to_spot:list
+ is_bus:np.ndarray;settle1:np.ndarray;rate_by_policy:dict
+
+def utc(x):
+ t=pd.Timestamp(x);return t.tz_localize('UTC') if t.tzinfo is None else t.tz_convert('UTC')
+
+def prepare():
