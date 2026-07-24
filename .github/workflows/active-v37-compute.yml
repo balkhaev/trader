@@ -1,0 +1,51 @@
+name: Active V37 regime funding compute
+
+on:
+  push:
+    branches: [agent/active-v33-multiasset-carry]
+    paths:
+      - "research/active_v37_compute/**"
+      - ".github/workflows/active-v37-compute.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/active_v37_compute/**"
+      - ".github/workflows/active-v37-compute.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore V33 Binance cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/v33
+          key: binance-v33-fixed-universe-8h-2020-2026
+      - name: Reconstruct shared source
+        run: python research/active_v33_compute/bootstrap.py --extract-only
+      - name: Install dependencies
+        run: python -m pip install numpy==2.3.5 pandas==2.2.3 numba==0.65.1
+      - name: Reconstruct, verify and compile V37
+        run: |
+          cat research/active_v37_compute/part_*.pyfrag > research/active_v37_compute/run_v37.py
+          echo "afca83a63247d6a555c66c227597b31e9bac7562ff71070cee50262aaf30a1dc  research/active_v37_compute/run_v37.py" | sha256sum -c -
+          python -m py_compile research/active_v37_compute/run_v37.py
+      - name: Run Active V37 research
+        run: python research/active_v37_compute/run_v37.py --cache .cache/v33 --output artifacts/active_v37
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-v37-regime-funding
+          path: artifacts/active_v37
+          if-no-files-found: warn
+          retention-days: 30
