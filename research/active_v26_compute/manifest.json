@@ -1,0 +1,24 @@
+{
+  "parts": 2,
+  "encoded_bytes": 11516,
+  "encoded_sha256": "ac4a91ad7ba179b4cc099462471f2f48b8b9bfcd9d646ed1abe955bcab96ff58",
+  "archive_bytes": 8635,
+  "archive_sha256": "c327bf8304603c16694975be78690b4c59e949c7c0dc36f7f1686e119d7f9e5b",
+  "source_files": {
+    "run.py": "650d8049bcd97de7b4a28d724e712b0982e226c2df44fe0e408c75a3519f0a20",
+    "requirements.txt": "69641f72a8965749cd614d7b744351d30f21b663351b19c80145885f90e2a5e1",
+    "README.md": "33412497e0b36ffb25ade2ca870270b15cc455167285e31d95cb97b39bcf2f66"
+  },
+  "part_files": [
+    {
+      "path": "part_00.b64",
+      "bytes": 8000,
+      "sha256": "a585268d431d274792736f9c2dbf2e996e8986ef4633316149e4db70a92ee21e"
+    },
+    {
+      "path": "part_01.b64",
+      "bytes": 3516,
+      "sha256": "2b5959fd2461ba64f4ad18a0857f3c30e9b63768f5fc8e10f9e8953ef2521854"
+    }
+  ]
+}
