@@ -1,0 +1,136 @@
+.cumsum(rng.normal(0.0004, 0.025, len(idx)))), index=idx
+    )
+    base = pd.Series(np.where(np.arange(len(idx)) % 31 < 17, 1.0, 0.0), index=idx)
+    books49 = build_v49_processes(base, close)
+    books50 = build_v50_processes(base, close)
+    assert len(books49) == 15 and len(books50) == 15
+    assert all(((s >= 0.0) & (s <= 1.0)).all() for s in (*books49.values(), *books50.values()))
+    changed = close.copy()
+    changed.iloc[-1] *= 7.0
+    changed49 = build_v49_processes(base, changed)
+    changed50 = build_v50_processes(base, changed)
+    for name in books49:
+        assert np.allclose(books49[name], changed49[name], equal_nan=True), name
+    for name in books50:
+        assert np.allclose(books50[name], changed50[name], equal_nan=True), name
+    # Lower budgets must never exceed higher neighbouring budgets.
+    low = base * volatility_budget(close, 0.80)
+    high = base * volatility_budget(close, 0.95)
+    assert (low <= high + 1e-12).all()
+    print("Active V49-V50 causal risk-budget self-test passed")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", type=Path)
+    parser.add_argument("--v46-source", type=Path)
+    parser.add_argument("--cache", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+    if args.self_test:
+        run_self_test()
+        return
+    if None in (args.source, args.v46_source, args.cache, args.output):
+        raise SystemExit("--source, --v46-source, --cache and --output are required")
+    args.output.mkdir(parents=True, exist_ok=True)
+    sys.path.insert(0, str(args.source.resolve()))
+    from config import Config, PERIODS, SCENARIOS, SEGMENTS
+    from data import load
+    from metrics import block_bootstrap, metrics, yearly
+    from strategy import build_families, simulate
+
+    cfg = Config()
+    dataset, manifest, quality = load(cfg, args.cache)
+    spot, _ = build_families(dataset)
+    raw_v44 = spot["exchange_pressure"]
+    frozen_v46 = load_v46(args.v46_source.resolve())
+    base_signal = frozen_v46.build_books(raw_v44)["confirmation"]
+    close = dataset.spot_close.ffill()
+    books = {
+        "v49_vol_budget": build_v49_processes(base_signal, close),
+        "v50_multiplicative": build_v50_processes(base_signal, close),
+    }
+
+    library_rows: list[dict] = []
+    evidence: dict[str, dict] = {}
+    signals: dict[str, pd.Series] = {}
+    for experiment, processes in books.items():
+        for policy_name, signal in processes.items():
+            candidate = f"{experiment}:{policy_name}"
+            rows = {scenario: {} for scenario in ("stress", "severe", "extreme")}
+            for scenario in rows:
+                for period in (*SEGMENTS, "prefinal"):
+                    account = simulate(
+                        dataset,
+                        signal,
+                        *PERIODS[period],
+                        SCENARIOS[scenario],
+                        "spot",
+                        1.0,
+                        cfg.forced_exit_bps,
+                    )
+                    rows[scenario][period] = metrics(account)
+            pre = rows["stress"]["prefinal"]
+            is_eligible = eligible(rows, pre, SEGMENTS)
+            candidate_score = score(rows, pre, SEGMENTS)
+            library_rows.append(
+                {
+                    "candidate": candidate,
+                    "experiment": experiment,
+                    "policy": policy_name,
+                    "eligible_before_final": is_eligible,
+                    "score": candidate_score,
+                    **{f"prefinal_{key}": value for key, value in pre.items()},
+                    "worst_stress_segment": min(
+                        rows["stress"][period]["total_return"] for period in SEGMENTS
+                    ),
+                    "worst_severe_segment": min(
+                        rows["severe"][period]["total_return"] for period in SEGMENTS
+                    ),
+                    "worst_extreme_segment": min(
+                        rows["extreme"][period]["total_return"] for period in SEGMENTS
+                    ),
+                }
+            )
+            evidence[candidate] = rows
+            signals[candidate] = signal
+
+    library = pd.DataFrame(library_rows).sort_values(
+        ["eligible_before_final", "score"], ascending=[False, False]
+    )
+    library.to_csv(args.output / "selection_library.csv", index=False)
+
+    leaders: dict[str, str] = {}
+    proofs: dict[str, dict] = {}
+    for experiment in books:
+        subset = library[library.experiment == experiment]
+        leader = str(subset.iloc[0].candidate)
+        leaders[experiment] = leader
+        rows = evidence[leader]
+        pre = rows["stress"]["prefinal"]
+        proof = {
+            "candidate": "ACTIVE_V49_V50_ONCHAIN_RISK_BUDGET",
+            "experiment": experiment,
+            "selection_excludes_final": True,
+            "program_level_final_is_pristine": False,
+            "immutable_base": "V46 confirmation",
+            "vol_windows": VOL_WINDOWS,
+            "base_vol_targets": BASE_VOL_TARGETS,
+            "vol_budget_multipliers": VOL_BUDGET_MULTIPLIERS,
+            "drawdown_windows": DRAWDOWN_WINDOWS,
+            "drawdown_thresholds": DRAWDOWN_THRESHOLDS,
+            "drawdown_low_risk": DRAWDOWN_LOW_RISK,
+            "recovery_fast": RECOVERY_FAST,
+            "recovery_slow": RECOVERY_SLOW,
+            "recovery_exit_returns": RECOVERY_EXIT_RETURNS,
+            "process_count": int(len(subset)),
+            "leader": leader,
+            "eligible_before_final": bool(subset.iloc[0].eligible_before_final),
+            "score": float(subset.iloc[0].score),
+            "prefinal": pre,
+            "all_stress_segments_positive": min(
+                rows["stress"][period]["total_return"] for period in SEGMENTS
+            ) > 0.0,
+            "worst_severe_segment": min(
+                rows["severe"][period]["total_retur
