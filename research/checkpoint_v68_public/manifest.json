@@ -1,0 +1,31 @@
+{
+  "format": "base64(tar.bz2)",
+  "encoded_bytes": 27080,
+  "encoded_sha256": "69f0b09ab2a35f947ccf5930f2ea59f47932dca0f529575c144dc108329255f7",
+  "archive_bytes": 20309,
+  "archive_sha256": "fded3ac08f838f7bff7818acf3d4cd43aa332062b0bf11b8afc9dc8269df4255",
+  "parts": [
+    {
+      "path": "part_000.b64",
+      "bytes": 7000,
+      "sha256": "351719018385bebb7890290b56b06c23e19094fcb272485c51dc74a690be6b95"
+    },
+    {
+      "path": "part_001.b64",
+      "bytes": 7000,
+      "sha256": "257508dcf3f76f18e593c701978ca654d2ac092300a6d59a64ee0618176d471d"
+    },
+    {
+      "path": "part_002.b64",
+      "bytes": 7000,
+      "sha256": "97ddbe7d6cd18abbf1d4c314a75a741bd655f7914c071fa324984b9517de6c1d"
+    },
+    {
+      "path": "part_003.b64",
+      "bytes": 6080,
+      "sha256": "ce0679c3bb60d5472ecf2bbb8651b21cfdef13246c34aa1d6880a5527c78429f"
+    }
+  ],
+  "checkpoint_commit": "b4d59f268e493e7f3defb9b87481e18a4e8c3274",
+  "parent_main": "6f9f18883265a1c95bbdc2caad43de089b1533f5"
+}
