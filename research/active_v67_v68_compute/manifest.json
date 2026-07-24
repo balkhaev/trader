@@ -1,0 +1,24 @@
+{
+  "sources": {
+    "v67_blended_onchain_market.py": {
+      "bytes": 8125,
+      "sha256": "996c83a5df824b2c23f17871d105148a69a3e52d7ec3f4040e1a4e1329bf1a1a"
+    },
+    "v68_v67_intrabar.py": {
+      "bytes": 2865,
+      "sha256": "c8e657688ee00b513ab769e9348c5898c1e1e55b62d12662ba5eae505306b15d"
+    }
+  },
+  "parts": [
+    {
+      "path": "v67_part_000.pyfrag",
+      "bytes": 5000,
+      "sha256": "de80fca169b05d1cd9415755cdd481d72c66d16c4a55e5af8748ee31611e1864"
+    },
+    {
+      "path": "v67_part_001.pyfrag",
+      "bytes": 3125,
+      "sha256": "dcda299e514d9614e40478bbc2a8496aee93f24cf95f83cc98ddf7b038b97b88"
+    }
+  ]
+}
