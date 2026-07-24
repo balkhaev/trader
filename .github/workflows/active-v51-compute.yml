@@ -41,7 +41,8 @@ jobs:
           mkdir -p research/active_v44_compute/payload research/active_v46_compute research/active_v49_compute
           curl -fL "$raw/$V44_COMMIT/research/active_v44_compute/bootstrap.py" -o research/active_v44_compute/bootstrap.py
           curl -fL "$raw/$V44_COMMIT/research/active_v44_compute/manifest.json" -o research/active_v44_compute/manifest.json
-          for n in $(seq -w 0 12); do
+          for i in $(seq 0 12); do
+            n=$(printf '%03d' "$i")
             curl -fL "$raw/$V44_COMMIT/research/active_v44_compute/payload/chunk_$n" -o "research/active_v44_compute/payload/chunk_$n"
           done
           curl -fL "$raw/$V44_COMMIT/research/active_v46_compute/run_v46.py" -o research/active_v46_compute/run_v46.py
