@@ -25,5 +25,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Print bundle diagnostics
+        run: |
+          wc -c research/active_v28_integrity/bundle.b64
+          sha256sum research/active_v28_integrity/bundle.b64
+          cat research/active_v28_integrity/manifest.json
       - name: Verify and compile frozen V28 bundle
         run: python research/active_v28_integrity/verify.py
