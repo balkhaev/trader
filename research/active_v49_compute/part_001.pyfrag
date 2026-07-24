@@ -1,4 +1,24 @@
-.cumsum(rng.normal(0.0004, 0.025, len(idx)))), index=idx
+        > GATES["worst_severe_segment_min"]
+        and min(rows["extreme"][period]["total_return"] for period in segments)
+        > GATES["worst_extreme_segment_min"]
+    )
+
+
+def score(rows: dict, pre: dict, segments: tuple[str, ...]) -> float:
+    return float(
+        pre["annualized_return"]
+        + 0.10 * pre["sharpe"]
+        + 0.20 * min(rows["stress"][period]["total_return"] for period in segments)
+        - 0.18 * abs(pre["max_drawdown"])
+        - 0.002 * pre["annual_turnover"]
+    )
+
+
+def run_self_test() -> None:
+    idx = pd.date_range("2018-01-01", periods=1400, freq="1D", tz="UTC")
+    rng = np.random.default_rng(49)
+    close = pd.Series(
+        100.0 * np.exp(np.cumsum(rng.normal(0.0004, 0.025, len(idx)))), index=idx
     )
     base = pd.Series(np.where(np.arange(len(idx)) % 31 < 17, 1.0, 0.0), index=idx)
     books49 = build_v49_processes(base, close)
@@ -123,14 +143,3 @@ def main() -> None:
             "drawdown_low_risk": DRAWDOWN_LOW_RISK,
             "recovery_fast": RECOVERY_FAST,
             "recovery_slow": RECOVERY_SLOW,
-            "recovery_exit_returns": RECOVERY_EXIT_RETURNS,
-            "process_count": int(len(subset)),
-            "leader": leader,
-            "eligible_before_final": bool(subset.iloc[0].eligible_before_final),
-            "score": float(subset.iloc[0].score),
-            "prefinal": pre,
-            "all_stress_segments_positive": min(
-                rows["stress"][period]["total_return"] for period in SEGMENTS
-            ) > 0.0,
-            "worst_severe_segment": min(
-                rows["severe"][period]["total_retur
