@@ -1,0 +1,95 @@
+name: Active V62-V66 onchain spot-perpetual compute
+
+on:
+  push:
+    branches: [agent/active-v62-v66-compute]
+    paths:
+      - "research/active_v62_v66_compute/**"
+      - ".github/workflows/active-v62-v66-compute.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/active_v62_v66_compute/**"
+      - ".github/workflows/active-v62-v66-compute.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONUNBUFFERED: "1"
+      V5_ARTIFACT: "8575347195"
+      V5_SHA256: "43ac64a77e205e9fed4601ebdb526bd71495beb8a0e76751bad91685ebad0a63"
+      V50_ARTIFACT: "8607140186"
+      V50_SHA256: "525b22c6dfa31fb3a16fdd406b5ed9d6724b83dea03847dc4b7e52c00e702c9e"
+      V52_ARTIFACT: "8608583166"
+      V52_SHA256: "b6c74d40f145ea1d5ebbe427626bf3211985e16cd80d1c4f5d7457d2753d593b"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Reconstruct and verify exact source
+        run: python research/active_v62_v66_compute/bootstrap.py --extract-only
+      - name: Install dependencies
+        run: python -m pip install -r research/active_v62_v66_compute/generated/requirements.txt
+      - name: Download and verify frozen input artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/v62inputs/v5 /tmp/v62inputs/v50 /tmp/v62inputs/v52
+          api="https://api.github.com/repos/${{ github.repository }}/actions/artifacts"
+          for item in "v5:$V5_ARTIFACT:$V5_SHA256" "v50:$V50_ARTIFACT:$V50_SHA256" "v52:$V52_ARTIFACT:$V52_SHA256"; do
+            IFS=: read -r name aid digest <<< "$item"
+            curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$api/$aid/zip" -o "/tmp/$name.zip"
+            echo "$digest  /tmp/$name.zip" | sha256sum -c -
+            unzip -q "/tmp/$name.zip" -d "/tmp/v62inputs/$name"
+          done
+      - name: Stage exact inputs under isolated compute root
+        run: |
+          set -euxo pipefail
+          sudo mkdir -p /mnt/data/v6_proc /mnt/data/v5_proc/processed /mnt/data/v49_reopen /mnt/data/v52_result
+          sudo chown -R "$USER":"$USER" /mnt/data
+          cp /tmp/v62inputs/v5/processed/spot_BTCUSDT_1d.csv /mnt/data/v6_proc/processed_BTCUSDT_1d.csv
+          cp /tmp/v62inputs/v5/processed/spot_ETHUSDT_1d.csv /mnt/data/v6_proc/processed_ETHUSDT_1d.csv
+          cp /tmp/v62inputs/v5/processed/perp_BTCUSDT_8h.csv /mnt/data/v5_proc/processed/
+          cp /tmp/v62inputs/v5/processed/perp_ETHUSDT_8h.csv /mnt/data/v5_proc/processed/
+          cp /tmp/v62inputs/v5/processed/funding_BTCUSDT.csv /mnt/data/v5_proc/processed/
+          cp /tmp/v62inputs/v5/processed/funding_ETHUSDT.csv /mnt/data/v5_proc/processed/
+          cp /tmp/v62inputs/v50/v50_multiplicative_stress_full_equity.csv /mnt/data/v49_reopen/
+          cp /tmp/v62inputs/v52/stress_full_equity.csv /mnt/data/v52_result/
+          cp research/active_v62_v66_compute/generated/*.py /mnt/data/
+      - name: Run deterministic source self-test
+        run: python /mnt/data/v62_onchain_spot_perp.py --self-test
+      - name: Run full V62-V66 research chain
+        run: |
+          set -euxo pipefail
+          python /mnt/data/v62_onchain_spot_perp.py | tee /mnt/data/v62.log
+          python /mnt/data/v63_v62_plateau_ensemble.py | tee /mnt/data/v63.log
+          python /mnt/data/v64_v52_spot_perp.py | tee /mnt/data/v64.log
+          python /mnt/data/v65_v62_safe_cap_ensemble.py | tee /mnt/data/v65.log
+          python /mnt/data/v66_v65_intrabar_margin_audit.py | tee /mnt/data/v66.log
+      - name: Preserve complete evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/active_v62_v66/source artifacts/active_v62_v66/results
+          cp research/active_v62_v66_compute/generated/* artifacts/active_v62_v66/source/ || true
+          cp research/active_v62_v66_compute/manifest.json artifacts/active_v62_v66/source_manifest.json
+          cp -r /mnt/data/v62_onchain_spot_perp /mnt/data/v63_v62_plateau_ensemble /mnt/data/v64_v52_spot_perp /mnt/data/v65_v62_safe_cap_ensemble /mnt/data/v66_v65_intrabar_margin_audit artifacts/active_v62_v66/results/ || true
+          cp /mnt/data/v6*.log artifacts/active_v62_v66/ || true
+          printf '%s\n' "$V5_ARTIFACT $V5_SHA256" "$V50_ARTIFACT $V50_SHA256" "$V52_ARTIFACT $V52_SHA256" > artifacts/active_v62_v66/input_artifacts.txt
+          echo "${{ github.sha }}" > artifacts/active_v62_v66/compute_commit.txt
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-v62-v66-onchain-spot-perp
+          path: artifacts/active_v62_v66
+          if-no-files-found: error
+          retention-days: 30
