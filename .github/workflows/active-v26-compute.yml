@@ -55,7 +55,9 @@ jobs:
             --output artifacts/active_v26 \
             --cache .cache/v26
           mkdir -p artifacts/active_v26/source
-          cp research/active_v26_compute/generated/* artifacts/active_v26/source/
+          cp research/active_v26_compute/generated/*.py artifacts/active_v26/source/
+          cp research/active_v26_compute/generated/README.md artifacts/active_v26/source/
+          cp research/active_v26_compute/generated/requirements.txt artifacts/active_v26/source/
           cp research/active_v26_compute/manifest.json artifacts/active_v26/source_payload_manifest.json
 
       - name: Upload artifact
