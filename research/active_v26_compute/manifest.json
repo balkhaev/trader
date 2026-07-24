@@ -1,18 +1,18 @@
 {
   "parts": 3,
-  "payload_dir": "payload_v3",
-  "encoded_bytes": 12108,
-  "encoded_sha256": "1290cf26c338b0ad47b128b4b0262bf6571f6c840e9ef3387beced1eca9765c6",
-  "archive_bytes": 9080,
-  "archive_sha256": "6305e85860d8677cd9dfbaaf3e1d8743bbdadfd2b32256a9b1b64a870fc1420d",
+  "payload_dir": "payload_v4",
+  "encoded_bytes": 12936,
+  "encoded_sha256": "5c281cce6c194dcd11bc5c5270d699098b652a85bae76d8786f148bef1bcdf81",
+  "archive_bytes": 9701,
+  "archive_sha256": "22345c2d934a06b03a88acd0ed8138447e6b6be89a34ddb2379960b1f3e96c16",
   "source_files": {
-    "run.py": "69c2877a35c0a50e3bcb0d54e3feff2e0e66f68ba61cac9fac3c1c8f72d3e6a9",
+    "run.py": "c3d047a80dca8465bce5f57de3cfcbb892358f0b963792222468172156f1dea1",
     "requirements.txt": "69641f72a8965749cd614d7b744351d30f21b663351b19c80145885f90e2a5e1",
     "README.md": "33412497e0b36ffb25ade2ca870270b15cc455167285e31d95cb97b39bcf2f66"
   },
   "part_files": [
-    {"path":"part_00.b64","bytes":6000,"sha256":"3fdd4cef2e79f3ce27c765614f2fe621cb47ed837197a4bca4881e24d74599a9"},
-    {"path":"part_01.b64","bytes":6000,"sha256":"05465ea912a085a2b2f074b65657db6214a02cd9f35de6c4ec6e02fcb9353aee"},
-    {"path":"part_02.b64","bytes":108,"sha256":"84750485ac0c45ea4991cf5ec241b182d6a508f7a838ee383d0c61f8ea115906"}
+    {"path":"part_00.b64","bytes":6000,"sha256":"8df9b23a0fef571e9e0cf3da4dc87b6cdadbcbf54b2474f0b115137f21a85865"},
+    {"path":"part_01.b64","bytes":6000,"sha256":"7e83d445ac8c7b8e2867ecf3ee812677d20b4739579a5fc8546a98c15225e83c"},
+    {"path":"part_02.b64","bytes":936,"sha256":"1c088165b7af86e026b6bd05a1a9a21f096b882a20665db5284802765277f497"}
   ]
 }
