@@ -36,7 +36,7 @@ jobs:
         run: python -m pip install numpy==2.3.5 pandas==2.2.3 numba==0.65.1
       - name: Verify and compile V35
         run: |
-          echo "813dad5f349074fa8b1d8841cb3fb359a6f51f43ec1960c3d65a4e35eeedcdc8  research/active_v35_compute/run_v35.py" | sha256sum -c -
+          echo "a805025c6abe98ab6ff4329e7206e8d52a66c9893e5df3b09d94e2cd3b83c076  research/active_v35_compute/run_v35.py" | sha256sum -c -
           python -m py_compile research/active_v35_compute/run_v35.py
       - name: Run Active V35 research
         run: python research/active_v35_compute/run_v35.py --cache .cache/v33 --output artifacts/active_v35
