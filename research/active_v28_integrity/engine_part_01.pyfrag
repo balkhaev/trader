@@ -1,0 +1,55 @@
+ data,raw,po,pc,fund=v8inputs.load(Path('/mnt/data/v6_new'),Path('/mnt/data/v5_new'))
+ v7=v8signals.build_v7_hedge(pc,fund,raw);rel=v8signals.build_v8_relative(pc);rp=v8signals.build_combined_hedge(v7,rel)
+ bs=mean_transforms(raw,SPOT_SELECTED);bp=mean_transforms(rp,PERP_SELECTED)
+ spotclose=pd.DataFrame({s:data.close[s] for s in pc.columns},index=data.index)
+ carry=sum(build_signal(fund,pc,spotclose,p) for p in CARRY_POLICIES)/len(CARRY_POLICIES)
+ opens={};closes={};funds={};base=Path('/mnt/data/v5_new/processed')
+ for s in ('BTCUSDT','ETHUSDT'):
+  p=pd.read_csv(base/f'perp_{s}_8h.csv',index_col=0,parse_dates=True);p.index=pd.to_datetime(p.index,utc=True);opens[s]=p.open;closes[s]=p.close
+  f=pd.read_csv(base/f'funding_{s}.csv',index_col=0,parse_dates=True);f.index=pd.to_datetime(f.index,utc=True,format='mixed').floor('8h');funds[s]=f.funding_rate.groupby(level=0).sum()
+ o=pd.DataFrame(opens).sort_index();c=pd.DataFrame(closes).reindex(o.index);f=pd.DataFrame(funds).reindex(o.index).fillna(0.)
+ start=data.index.min();end=data.index.max()+pd.Timedelta(days=1);o=o[(o.index>=start)&(o.index<end)];c=c.reindex(o.index);f=f.reindex(o.index).fillna(0.)
+ if len(o)!=len(data.index)*3:raise ValueError((len(o),len(data.index)))
+ naive=data.index.tz_convert(None).normalize();bdset=set(pd.date_range(naive.min(),naive.max()+pd.Timedelta(days=10),freq=USBD))
+ isbus=np.array([x in bdset for x in naive],bool);settle=np.empty(len(naive),int)
+ for i,x in enumerate(naive):
+  submit=x if x in bdset else USBD.rollforward(x);sdate=submit+USBD
+  settle[i]=min(int(naive.searchsorted(sdate,side='left')),len(naive)-1)
+ rate={}
+ for policy in CASH_POLICIES:
+  arr=np.zeros(len(data.index))
+  for i,ts in enumerate(data.index):
+   prev=(ts.tz_convert(None).to_period('M')-1).strftime('%Y-%m');rawr=MONTHLY_RATES.get(prev,0.)/100.;arr[i]=max(0.,rawr*policy.yield_haircut-policy.annual_expense_bps/10000.)
+  rate[policy.name]=arr
+ symbols=tuple(data.symbols);pairs=tuple(o.columns);pair_to=[symbols.index(s) for s in pairs]
+ ctx=Ctx(data.index,data.open.to_numpy(float),data.close.to_numpy(float),data.available.to_numpy(bool),bs.reindex(data.index).fillna(0).to_numpy(float),bp.reindex(data.index).fillna(0).to_numpy(float),carry.reindex(data.index).fillna(0).to_numpy(float),o.to_numpy(float),c.to_numpy(float),f.to_numpy(float),symbols,pairs,pair_to,isbus,settle,rate)
+ return data,ctx
+
+def base_targets(s,p,locked,cap,available):
+ s=np.nan_to_num(s.copy());p=np.nan_to_num(p.copy());s[(~available)|(s<0)]=0.;s*=locked;p*=locked;g=float(s.sum()+np.abs(p).sum())
+ if g>cap and g>0:m=cap/g;s*=m;p*=m
+ return s,p
+
+def add_carry(bs,bp,c,pair_to,cap):
+ c=np.maximum(np.nan_to_num(c.copy()),0.)
+ def combo(a):
+  cs=np.zeros_like(bs);cp=np.zeros_like(bp)
+  for k,j in enumerate(pair_to):cs[j]+=a*c[k]
+  cp-=a*c;ts=bs+cs;tp=bp+cp;return ts,tp,cs,cp,float(ts.sum()+np.abs(tp).sum())
+ ts,tp,cs,cp,g=combo(1.)
+ if g<=cap:return ts,tp,cs,cp,1.,g
+ lo,hi=0.,1.
+ for _ in range(45):
+  mid=(lo+hi)/2;*_,gm=combo(mid)
+  if gm<=cap:lo=mid
+  else:hi=mid
+ return (*combo(lo)[:4],lo,combo(lo)[4])
+
+def feasible(ds,dp,as_,ap,eq,locked_cash,cost,op_res,margin):
+ def f(a):
+  ts=ds*a;tp=dp*a;turn=float(np.abs(ts-as_).sum()+np.abs(tp-ap).sum());tc=eq*turn*cost;after=max(0.,eq-tc);req=locked_cash+after*(float(ts.sum())+margin*float(np.abs(tp).sum())+op_res);return req<=after+1e-9,tc,after
+ ok,tc,af=f(1.)
+ if ok:return 1.,tc,af
+ lo,hi=0.,1.;btc,baf=f(0.)[1:]
+ for _ in range(45):
+  mid=(lo+hi)/2;ok,tc,af=f(mid)
