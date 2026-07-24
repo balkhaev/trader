@@ -1,0 +1,15 @@
+{
+  "parts": 2,
+  "encoded_bytes": 12892,
+  "encoded_sha256": "596280f7bdf2f00e1ec87fe75cc27d489a9f8da7749dcf8bf4a5064c7dcd7a80",
+  "archive_bytes": 9669,
+  "archive_sha256": "a4dc4eebb6126743822054db441196e90fe45730f68b2a2e44f5647901d36fe6",
+  "source_files": {
+    "config.py": {"bytes": 1437, "sha256": "8e3cad2a11046a527d9204c35f50a698a8bd48deb1e9a96df4c8e15b8f7154d1"},
+    "data.py": {"bytes": 8564, "sha256": "cd5ee1faba9e4f82242ecbb80cdd760385fd7a7db9fa5c26679d18213a00c556"},
+    "metrics.py": {"bytes": 1500, "sha256": "b5b9b2b3968b5535e0fca3b3cc015910425c7b33960ba17abe4836e06ae1dacb"},
+    "requirements.txt": {"bytes": 41, "sha256": "5894fa88c9d85e38c4e37661b93e7923d2e9221a55246d2726726a47bb0c0368"},
+    "run.py": {"bytes": 10451, "sha256": "b0bc0c30988a8248c625cee3fff64ad13da3c588a9e82151e9f9de6b11f6c0f6"},
+    "strategy.py": {"bytes": 7986, "sha256": "11bb264ff67ac23b428b6200cac05182bcc2287baf4281dc2fc959f12b8e68d5"}
+  }
+}
