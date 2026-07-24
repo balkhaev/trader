@@ -1,0 +1,41 @@
+name: Binance futures metrics schema probe
+
+on:
+  push:
+    branches: [agent/binance-metrics-probe]
+    paths:
+      - ".github/workflows/binance-metrics-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe public archive paths and schema
+        run: |
+          set -euxo pipefail
+          mkdir -p probe
+          for url in \
+            https://data.binance.vision/data/futures/um/monthly/metrics/BTCUSDT/BTCUSDT-metrics-2024-01.zip \
+            https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2024-01-01.zip \
+            https://data.binance.vision/data/futures/um/daily/metrics/ETHUSDT/ETHUSDT-metrics-2021-01-01.zip
+          do
+            name=$(basename "$url")
+            code=$(curl -L -sS -w '%{http_code}' -o "probe/$name" "$url")
+            echo "$code $url $(wc -c < probe/$name)" | tee -a probe/status.txt
+            if [ "$code" = 200 ]; then
+              unzip -l "probe/$name" | tee -a probe/listing.txt
+              unzip -p "probe/$name" | head -n 8 | tee -a probe/sample.txt
+              curl -L -sS "$url.CHECKSUM" | tee -a probe/checksums.txt || true
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binance-metrics-schema-probe
+          path: probe
+          retention-days: 7
