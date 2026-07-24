@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import argparse,hashlib,json,sys
+from itertools import combinations
+from pathlib import Path
+import numpy as np
+import pandas as pd
+from numba import njit
+ROOT=Path(__file__).resolve().parent
+GEN=ROOT.parent/'active_v33_compute'/'generated';sys.path.insert(0,str(GEN))
+from config import Config,PERIODS,PREFINAL_PERIODS,COSTS_BPS
+from data import load
+from metrics import metrics,process_score
+FAMILIES=('bull_squeeze','bear_crowding','dual_regime','funding_reversal')
+GATES={'all_stress_segments_positive':True,'worst_severe_segment_min':-.10,'worst_extreme_segment_min':-.18,'prefinal_cagr_min':.05,'prefinal_max_drawdown_min':-.25,'prefinal_turnover_max':20.}
+@njit(cache=True)
+def rollmean(x,look):
+ n,m=x.shape;out=np.empty((n,m));out[:]=np.nan;s=np.zeros(m);c=np.zeros(m,np.int64)
+ for i in range(n):
+  for j in range(m):
+   v=x[i,j]
+   if np.isfinite(v):s[j]+=v;c[j]+=1
+   if i>=look:
+    z=x[i-look,j]
+    if np.isfinite(z):s[j]-=z;c[j]-=1
+   if i+1>=look and c[j]>=max(2,look//2):out[i,j]=s[j]/c[j]
+ return out
+@njit(cache=True)
+def variant(exp,mfast,mslow,bmark,vol,avail,entry,k,gross,reb,wmode,kind):
+ n,m=exp.shape;out=np.zeros((n,m));cur=np.zeros(m);last=-10**9
+ for i in range(n):
+  for j in range(m):
+   if not avail[i,j] or not np.isfinite(exp[i,j]):cur[j]=0.
+   elif cur[j]>0 and not ((exp[i,j]<=-entry*.35 and bmark[i]>0 and mfast[i,j]>0) or (kind==3 and exp[i,j]<=-entry*.35 and mfast[i,j]>0)):cur[j]=0.
+   elif cur[j]<0 and not ((exp[i,j]>=entry*.35 and bmark[i]<0 and mfast[i,j]<0) or (kind==3 and exp[i,j]>=entry*.35 and mfast[i,j]<0)):cur[j]=0.
+  if i-last<reb:out[i]=cur;continue
+  ids=np.empty(m,np.int64);scores=np.empty(m);signs=np.empty(m);cnt=0
+  for j in range(m):
+   if not avail[i,j] or not np.isfinite(exp[i,j]) or not np.isfinite(mfast[i,j]) or not np.isfinite(mslow[i,j]):continue
+   sg=0.;sc=0.
+   if kind==0:
+    if bmark[i]>0 and exp[i,j]<=-entry and mfast[i,j]>0 and mslow[i,j]>0:sg=1.;sc=-exp[i,j]+mfast[i,j]
+   elif kind==1:
+    if bmark[i]<0 and exp[i,j]>=entry and mfast[i,j]<0 and mslow[i,j]<0:sg=-1.;sc=exp[i,j]-mfast[i,j]
+   elif kind==2:
+    if bmark[i]>0 and exp[i,j]<=-entry and mfast[i,j]>0 and mslow[i,j]>0:sg=1.;sc=-exp[i,j]+mfast[i,j]
+    elif bmark[i]<0 and exp[i,j]>=entry and mfast[i,j]<0 and mslow[i,j]<0:sg=-1.;sc=exp[i,j]-mfast[i,j]
+   else:
+    if exp[i,j]<=-entry and mslow[i,j]<0 and mfast[i,j]>0:sg=1.;sc=-exp[i,j]+mfast[i,j]-mslow[i,j]
+    elif exp[i,j]>=entry and mslow[i,j]>0 and mfast[i,j]<0:sg=-1.;sc=exp[i,j]-mfast[i,j]+mslow[i,j]
+   if sg!=0:ids[cnt]=j;scores[cnt]=max(sc,1e-8);signs[cnt]=sg;cnt+=1
+  cur[:]=0.;use=min(k,cnt)
+  if use>0:
+   chosen=np.empty(use,np.int64);sv=np.empty(use);ss=np.empty(use);den=0.
+   for u in range(use):
+    bi=-1;bv=-1e99
+    for q in range(cnt):
+     used=False
+     for z in range(u):
+      if ids[q]==chosen[z]:used=True;break
+     if not used and scores[q]>bv:bi=q;bv=scores[q]
+    chosen[u]=ids[bi];sv[u]=scores[bi];ss[u]=signs[bi]
+   for u in range(use):
+    j=chosen[u];den+=(1. if wmode==0 else sv[u] if wmode==1 else 1./max(vol[i,j],1e-4))
+   for u in range(use):
+    j=chosen[u];w=(1. if wmode==0 else sv[u] if wmode==1 else 1./max(vol[i,j],1e-4));cur[j]=ss[u]*gross*w/den
+  last=i;out[i]=cur
+ return out
+@njit(cache=True)
+def sim(po,pc,fund,avail,sig,a,b,cost,forced,start_eq):
+ m=po.shape[1];n=b-a;cash=start_eq;pos=np.zeros(m);pending=sig[a-1].copy() if a>0 else np.zeros(m);prev=-1
+ eqs=np.empty(n);gross=np.empty(n);turn=np.empty(n);costs=np.empty(n);fpnl=np.empty(n)
+ for row,i in enumerate(range(a,b)):
+  fcost=0.;fnot=0.;fp=0.
+  if prev>=0:
+   for j in range(m):
+    if abs(pos[j])>0:
+     if avail[i,j] and np.isfinite(pc[prev,j]) and pc[prev,j]>0:
+      r=po[i,j]/pc[prev,j];cash+=pos[j]*(r-1);pos[j]*=r
+     else:fnot+=abs(pos[j]);fcost+=abs(pos[j])*forced;cash-=abs(pos[j])*forced;pos[j]=0.
+   for j in range(m):
+    if abs(pos[j])>0:v=-pos[j]*fund[i,j];cash+=v;fp+=v
+  eqo=cash;actual=pos/eqo;target=pending.copy()
+  for j in range(m):
+   if not avail[i,j]:target[j]=0.
+  g=np.sum(np.abs(target))
+  if g>.35:target*=.35/g
+  t=np.sum(np.abs(target-actual));tc=eqo*t*cost;after=max(0.,eqo-tc);pos=target*after;cash=after
+  for j in range(m):
+   if avail[i,j] and po[i,j]>0:
+    r=pc[i,j]/po[i,j];cash+=pos[j]*(r-1);pos[j]*=r
+  eq=cash;eqs[row]=eq;gross[row]=np.sum(np.abs(pos))/max(eq,1e-12);turn[row]=t+fnot/max(eqo,1e-12);costs[row]=tc+fcost;fpnl[row]=fp;pending=sig[i].copy();prev=i
+ return eqs,gross,turn,costs,fpnl
+
+def build_families(m):
+ close=m.perp_close;f=m.funding.to_numpy(float);ret3=close.pct_change(3,fill_method=None).to_numpy(float);ret9=close.pct_change(9,fill_method=None).to_numpy(float);ret21=close.pct_change(21,fill_method=None).to_numpy(float);ret42=close.pct_change(42,fill_method=None).to_numpy(float);vol=(close.pct_change(fill_method=None).rolling(90,min_periods=45).std()*np.sqrt(365*3)).to_numpy(float);av=m.available.to_numpy(bool);btc=m.symbols.index('BTCUSDT');bench=ret42[:,btc];expected={x:rollmean(f,x)*365*3 for x in (3,9,21,42)};shape=f.shape
+ specs={
+  'bull_squeeze':[(l,e,k,g,r,w) for l in (3,9,21) for e in (.15,.30) for k in (1,2) for g in (.15,.25) for r in (3,9) for w in (0,1)],
+  'bear_crowding':[(l,e,k,g,r,w) for l in (9,21,42) for e in (.10,.20) for k in (1,2) for g in (.15,.25) for r in (3,9) for w in (0,2)],
+  'dual_regime':[(l,e,k,g,r,w) for l in (9,21) for e in (.10,.20) for k in (2,3) for g in (.20,.30) for r in (9,21) for w in (0,2)],
+  'funding_reversal':[(l,e,k,g,r,w) for l in (3,9) for e in (.20,.40) for k in (1,2) for g in (.15,.20) for r in (3,9) for w in (0,1)],
+ }
+ out={};counts={}
+ for name,sp in specs.items():
+  acc=np.zeros(shape);kind=0 if name=='bull_squeeze' else 1 if name=='bear_crowding' else 2 if name=='dual_regime' else 3
+  for l,e,k,g,r,w in sp:
+   mf=ret3 if name in ('bull_squeeze','funding_reversal') else ret9;ms=ret21 if name in ('bull_squeeze','funding_reversal') else ret42;acc+=variant(expected[l],mf,ms,bench,vol,av,e,k,g,r,w,kind)
+  out[name]=pd.DataFrame(acc/len(sp),index=m.index,columns=m.symbols);counts[name]=len(sp)
+ return out,counts
+
+def processes(f):return {'+'.join(s):sum(f[x] for x in s)/len(s) for n in range(1,5) for s in combinations(FAMILIES,n)}
+def simulate(m,s,start,end,bps):
+ a=int(m.index.searchsorted(pd.Timestamp(start,tz='UTC')));b=int(m.index.searchsorted(pd.Timestamp(end,tz='UTC')));v=sim(m.perp_open.to_numpy(float),m.perp_close.to_numpy(float),m.funding.to_numpy(float),m.available.to_numpy(bool),s.reindex(m.index).fillna(0).to_numpy(float),a,b,bps/10000.,.01,10000.)
+ return pd.DataFrame({'equity':v[0],'gross':v[1],'turnover':v[2],'costs':v[3],'funding_pnl':v[4]},index=m.index[a:b])
+def main():
+ p=argparse.ArgumentParser();p.add_argument('--cache',type=Path);p.add_argument('--output',type=Path);a=p.parse_args();a.output.mkdir(parents=True,exist_ok=True);m,_,_=load(Config(),a.cache);fam,counts=build_families(m);procs=processes(fam);rows=[]
+ for name,sig in procs.items():
+  for scen in 
