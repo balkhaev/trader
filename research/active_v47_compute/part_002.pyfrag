@@ -1,0 +1,87 @@
+nal", "final_2026_ytd", "full"):
+                account = simulate(dataset, signal, *PERIODS[period], bps, "spot", 1.0, cfg.forced_exit_bps)
+                result_rows.append(
+                    {"base": base_name, "leader": leader, "scenario": scenario, "period": period, **metrics(account)}
+                )
+                accounts[(base_name, scenario, period)] = account
+    results = pd.DataFrame(result_rows)
+    results.to_csv(args.output / "metrics.csv", index=False)
+
+    def get(base: str, scenario: str, period: str) -> dict:
+        row = results[(results.base == base) & (results.scenario == scenario) & (results.period == period)].iloc[0]
+        return row.to_dict()
+
+    summaries: dict[str, dict] = {}
+    promoted: list[str] = []
+    for base_name, leader in leaders.items():
+        pre_ok = bool(library[library.candidate == leader].iloc[0].eligible_before_final)
+        final_stress = get(base_name, "stress", "final_2026_ytd")
+        final_severe = get(base_name, "severe", "final_2026_ytd")
+        if pre_ok and final_stress["total_return"] > 0 and final_severe["total_return"] > 0:
+            status = "frozen_paper_forward_candidate"
+            promoted.append(base_name)
+        elif pre_ok and final_stress["total_return"] >= 0 and final_severe["total_return"] >= 0:
+            status = "historical_risk_candidate_needs_nonzero_forward"
+        else:
+            status = "rejected_or_needs_iteration"
+        full = accounts[(base_name, "stress", "full")]
+        full.to_csv(args.output / f"{base_name}_stress_full_equity.csv")
+        yearly(full).to_csv(args.output / f"{base_name}_yearly_stress.csv", index=False)
+        summaries[base_name] = {
+            "status": status,
+            "leader": leader,
+            "eligible_before_final": pre_ok,
+            "selection_proof_sha256": proofs[base_name]["selection_proof_sha256"],
+            "prefinal": get(base_name, "stress", "prefinal"),
+            "stress_full": get(base_name, "stress", "full"),
+            "stress_final": final_stress,
+            "severe_final": final_severe,
+            "strict_costs": {
+                scenario: {
+                    "full": get(base_name, scenario, "full"),
+                    "final": get(base_name, scenario, "final_2026_ytd"),
+                }
+                for scenario in SCENARIOS
+            },
+        }
+
+    bootstrap_rows = []
+    for base_name in bases:
+        account = accounts[(base_name, "stress", "prefinal")]
+        returns = account.equity.pct_change()
+        for block, horizon in itertools.product((30, 60, 120), (1095, 2190)):
+            bootstrap_rows.append(
+                {
+                    "base": base_name,
+                    **block_bootstrap(returns, block=block, horizon=horizon, seed=47000 + block + horizon),
+                }
+            )
+    pd.DataFrame(bootstrap_rows).to_csv(args.output / "block_bootstrap.csv", index=False)
+
+    summary = {
+        "candidate": "ACTIVE_V47_V48_ONCHAIN_RISK_LAYER",
+        "selection_excludes_final": True,
+        "program_level_final_is_pristine": False,
+        "promoted_leaders": promoted,
+        "leaders": summaries,
+        "data_quality": quality,
+        "decision": "Each on-chain base must pass standalone risk gates before any V28 integration.",
+    }
+    (args.output / "summary.json").write_text(json.dumps(summary, indent=2, default=list))
+    pd.DataFrame(manifest).to_csv(args.output / "data_manifest.csv", index=False)
+    (args.output / "provenance.json").write_text(
+        json.dumps(
+            {
+                "v44_v45_artifact": 8604664000,
+                "v46_artifact": 8604945072,
+                "v44_selection_proof": "527c908e30e48497d3f27bc6846233daa9b2f0c4239b74f6a8431557628a00dd",
+                "v46_selection_proof": "a47d8edf2c43311c7cd096f9b9cd41983434f77cd40130cd5b4ba3d51855fe98",
+            },
+            indent=2,
+        )
+    )
+    print(json.dumps(summary, indent=2, default=list))
+
+
+if __name__ == "__main__":
+    main()
