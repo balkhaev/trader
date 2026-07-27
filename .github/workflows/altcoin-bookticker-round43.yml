@@ -1,0 +1,53 @@
+name: Altcoin bookTicker execution round 43
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-round43-bookticker/**"
+      - ".github/workflows/altcoin-bookticker-round43.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+      - name: Restore verified bookTicker cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-bookticker-round43
+          key: bookticker-round43-sol-xrp-doge-jun25-jul06-v1
+      - name: Compile and run bid-ask execution research
+        run: |
+          python -m py_compile research/altcoin-round43-bookticker/run.py
+          rm -rf artifacts/altcoin-round43-bookticker
+          mkdir -p artifacts/altcoin-round43-bookticker
+          python research/altcoin-round43-bookticker/run.py \
+            --output artifacts/altcoin-round43-bookticker \
+            --cache .cache/binance-bookticker-round43 \
+            --workers 6
+          cp research/altcoin-round43-bookticker/run.py artifacts/altcoin-round43-bookticker/
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round43-bookticker-results
+          path: artifacts/altcoin-round43-bookticker
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
