@@ -1,0 +1,65 @@
+name: Altcoin wide fixed OI flush round 29
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-round28-confluence/**"
+      - ".github/workflows/altcoin-wide-confluence-round29.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+
+      - name: Restore verified archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-round29
+          key: altcoin-round29-usdm-kline-premium-metrics-30coins-v1
+
+      - name: Compile runners
+        run: |
+          python -m py_compile research/altcoin-round28-confluence/run.py
+          python -m py_compile research/altcoin-round28-confluence/run_wide.py
+
+      - name: Run wide fixed OI-flush research
+        run: |
+          rm -rf artifacts/altcoin-round29-wide
+          mkdir -p artifacts/altcoin-round29-wide
+          cd research/altcoin-round28-confluence
+          python run_wide.py \
+            --output ../../../artifacts/altcoin-round29-wide \
+            --cache ../../../.cache/binance-altcoin-round29 \
+            --workers 40
+          cd ../../..
+          cp research/altcoin-round28-confluence/run.py artifacts/altcoin-round29-wide/base_run.py
+          cp research/altcoin-round28-confluence/run_wide.py artifacts/altcoin-round29-wide/run_wide.py
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round29-wide-results
+          path: artifacts/altcoin-round29-wide
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
