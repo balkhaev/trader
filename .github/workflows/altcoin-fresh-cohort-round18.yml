@@ -1,0 +1,61 @@
+name: Altcoin fresh cohort round 18
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-round18-fresh-cohort/**"
+      - ".github/workflows/altcoin-fresh-cohort-round18.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+
+      - name: Restore verified archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-round18
+          key: altcoin-round18-usdm-15m-july2026-v1
+
+      - name: Compile runner
+        run: python -m py_compile research/altcoin-round18-fresh-cohort/run.py
+
+      - name: Run fixed fresh cohort
+        run: |
+          rm -rf artifacts/altcoin-round18-fresh-cohort
+          mkdir -p artifacts/altcoin-round18-fresh-cohort
+          python research/altcoin-round18-fresh-cohort/run.py \
+            --output artifacts/altcoin-round18-fresh-cohort \
+            --cache .cache/binance-altcoin-round18 \
+            --workers 16
+          cp research/altcoin-round18-fresh-cohort/run.py artifacts/altcoin-round18-fresh-cohort/run.py
+          cp research/altcoin-round18-fresh-cohort/README.md artifacts/altcoin-round18-fresh-cohort/README.md
+
+      - name: Upload complete research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round18-fresh-cohort-results
+          path: artifacts/altcoin-round18-fresh-cohort
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
