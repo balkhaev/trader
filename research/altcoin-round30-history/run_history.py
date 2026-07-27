@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import sys
+from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -16,6 +18,7 @@ spec = importlib.util.spec_from_file_location("round28_base", BASE_PATH)
 if spec is None or spec.loader is None:
     raise RuntimeError("cannot load round28 base")
 base = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = base
 spec.loader.exec_module(base)
 
 SYMBOLS = ["ETCUSDT", "SOLUSDT", "INJUSDT"]
