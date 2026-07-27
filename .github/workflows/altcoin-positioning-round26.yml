@@ -44,7 +44,7 @@ jobs:
           rm -rf artifacts/altcoin-round26-positioning
           mkdir -p artifacts/altcoin-round26-positioning
           PYTHONPATH=research/altcoin-round26-positioning \
-            python research/altcoin-round26-positioning/run.py \
+            python research/altcoin-round26-positioning/run_fixed.py \
               --output artifacts/altcoin-round26-positioning \
               --cache .cache/binance-altcoin-round26 \
               --workers 32
