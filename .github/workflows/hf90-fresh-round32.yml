@@ -13,85 +13,36 @@ permissions:
 jobs:
   research:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
     env:
       PYTHONUNBUFFERED: "1"
       PANDAS_COPY_ON_WRITE: "1"
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "numpy>=1.26,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "joblib>=1.3,<2" "lightgbm>=4.3,<5" "scikit-learn>=1.4,<2"
-
+          python -m pip install "numpy>=1.26,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "scikit-learn>=1.4,<2" "lightgbm>=4.3,<5" "joblib>=1.3,<2" "tabulate>=0.9,<1"
       - name: Restore verified Binance archive cache
         uses: actions/cache@v4
         with:
           path: .cache/binance-hf90-round32
-          key: hf90-binance-usdm-5m-2024-09-2026-06-v1
-
-      - name: Decode and verify frozen payload
+          key: hf90-round32-usdm-btceth-5m-2024-2026-v2
+      - name: Compile and run fixed replay
         run: |
-          base64 --decode research/hf90-round32/payload.tgz.b64 > /tmp/hf90.tgz
-          echo "c01fb9feb360c84066f301ba41eac050a12161a0410323bab1c7ff4c26ac8c56  /tmp/hf90.tgz" | sha256sum -c -
-          rm -rf /tmp/hf90
-          mkdir -p /tmp/hf90
-          tar -xzf /tmp/hf90.tgz -C /tmp/hf90
-          python -m py_compile /tmp/hf90/*.py
-
-      - name: Download official checksum-verified archives
-        run: |
+          python -m py_compile research/hf90-round32/run.py
           rm -rf artifacts/hf90-round32
           mkdir -p artifacts/hf90-round32
-          python /tmp/hf90/download_data.py \
-            --root .cache/binance-hf90-round32 \
-            --start 2024-09 \
-            --end 2026-06 \
-            --manifest artifacts/hf90-round32/SOURCE_MANIFEST.json
-
-      - name: Run frozen base replay
-        run: |
-          mkdir -p artifacts/hf90-round32/base
-          python /tmp/hf90/experiment_11_fresh_forward.py \
-            --data-root .cache/binance-hf90-round32 \
-            --model /tmp/hf90/model_h12_lgb_b_purged.joblib \
-            --feature-columns /tmp/hf90/feature_columns.json \
-            --start 2024-09-01T00:00:00Z \
-            --end 2026-07-01T00:00:00Z \
-            --output-dir artifacts/hf90-round32/base
-
-      - name: Run pre-registered execution stress
-        run: |
-          sed \
-            -e 's/PENETRATION_BPS = 1.0/PENETRATION_BPS = 3.0/' \
-            -e 's/COST_BPS = 12.0/COST_BPS = 16.0/' \
-            /tmp/hf90/experiment_11_fresh_forward.py > /tmp/hf90/stress_runner.py
-          mkdir -p artifacts/hf90-round32/stress
-          python /tmp/hf90/stress_runner.py \
-            --data-root .cache/binance-hf90-round32 \
-            --model /tmp/hf90/model_h12_lgb_b_purged.joblib \
-            --feature-columns /tmp/hf90/feature_columns.json \
-            --start 2024-09-01T00:00:00Z \
-            --end 2026-07-01T00:00:00Z \
-            --output-dir artifacts/hf90-round32/stress
-
-      - name: Analyze frozen results
-        run: |
-          python /tmp/hf90/analyze.py \
-            --base artifacts/hf90-round32/base/fresh_trades.csv \
-            --stress artifacts/hf90-round32/stress/fresh_trades.csv \
-            --output artifacts/hf90-round32
-          cp /tmp/hf90/*.py artifacts/hf90-round32/
-          cp /tmp/hf90/feature_columns.json artifacts/hf90-round32/
+          python research/hf90-round32/run.py \
+            --output artifacts/hf90-round32 \
+            --cache .cache/binance-hf90-round32 \
+            --workers 8
           find artifacts/hf90-round32 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > artifacts/hf90-round32/SHA256SUMS.txt
-
-      - name: Upload research artifact
+      - name: Upload full research artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
