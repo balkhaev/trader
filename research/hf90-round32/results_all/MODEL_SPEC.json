@@ -1,0 +1,28 @@
+{
+  "training_start": "2024-02-12T00:00:00+00:00",
+  "training_end_exclusive": "2024-04-30T22:55:00+00:00",
+  "training_rows": 45478,
+  "feature_count": 77,
+  "params": {
+    "boosting_type": "gbdt",
+    "class_weight": null,
+    "colsample_bytree": 1.0,
+    "importance_type": "split",
+    "learning_rate": 0.035,
+    "max_depth": 4,
+    "min_child_samples": 100,
+    "min_child_weight": 0.001,
+    "min_split_gain": 0.0,
+    "n_estimators": 120,
+    "n_jobs": 8,
+    "num_leaves": 15,
+    "objective": "regression_l1",
+    "random_state": 37,
+    "reg_alpha": 0.0,
+    "reg_lambda": 10,
+    "subsample": 1.0,
+    "subsample_for_bin": 200000,
+    "subsample_freq": 0,
+    "verbosity": -1
+  }
+}
