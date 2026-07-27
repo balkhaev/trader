@@ -1,0 +1,62 @@
+name: Altcoin OI wide history round 33
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-round33-wide-history/**"
+      - ".github/workflows/altcoin-oi-wide-history-round33.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+
+      - name: Restore verified archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-round33
+          key: altcoin-round33-usdm-oi-wide-history-2024-2025h1-v1
+
+      - name: Compile runners
+        run: |
+          python -m py_compile research/altcoin-round28-confluence/run.py
+          python -m py_compile research/altcoin-round33-wide-history/run_wide_history.py
+
+      - name: Run wide historical replay
+        run: |
+          rm -rf artifacts/altcoin-round33-wide-history
+          mkdir -p artifacts/altcoin-round33-wide-history
+          python research/altcoin-round33-wide-history/run_wide_history.py \
+            --output artifacts/altcoin-round33-wide-history \
+            --cache .cache/binance-altcoin-round33 \
+            --workers 32
+          cp research/altcoin-round33-wide-history/run_wide_history.py artifacts/altcoin-round33-wide-history/
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round33-wide-history-results
+          path: artifacts/altcoin-round33-wide-history
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
