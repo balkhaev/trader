@@ -32,13 +32,24 @@ jobs:
         with:
           path: .cache/binance-altcoin-round17
           key: altcoin-round17-usdm-15m-2025h2-2026july-v1
-      - name: Decode shared source and compile
+      - name: Decode shared source, freeze 30-symbol universe and compile
         run: |
           cat research/altcoin-round17-expanded/payload/chunk_*.b64 | base64 --decode > /tmp/round17.tgz
           echo "5ed53f4baaeaf22003d44efd7cdbab1c4fa3988d5a0f21d8480f7c436f8ba48d  /tmp/round17.tgz" | sha256sum -c -
           rm -rf /tmp/round17
           mkdir -p /tmp/round17
           tar -xzf /tmp/round17.tgz -C /tmp/round17
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('research/altcoin-round40-cross-sectional/run.py')
+          s=p.read_text()
+          old='from config import CUT, JULY_END, PRE_JULY_END, START, SYMBOLS\n'
+          universe=['SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','DOGEUSDT','AVAXUSDT','LINKUSDT','DOTUSDT','LTCUSDT','BCHUSDT','TRXUSDT','ETCUSDT','NEARUSDT','ATOMUSDT','APTUSDT','ARBUSDT','OPUSDT','SUIUSDT','INJUSDT','TIAUSDT','SEIUSDT','AAVEUSDT','UNIUSDT','FILUSDT','WLDUSDT','1000PEPEUSDT','1000BONKUSDT','1000SHIBUSDT','STXUSDT','ICPUSDT']
+          new='from config import CUT, JULY_END, PRE_JULY_END, START\nSYMBOLS = '+repr(universe)+'\n'
+          if old not in s:
+              raise SystemExit('config import block not found')
+          p.write_text(s.replace(old,new))
+          PY
           python -m py_compile /tmp/round17/*.py research/altcoin-round40-cross-sectional/run.py
       - name: Run medium-horizon cross-sectional research
         run: |
