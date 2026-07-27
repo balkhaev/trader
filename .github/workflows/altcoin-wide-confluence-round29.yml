@@ -42,15 +42,17 @@ jobs:
           python -m py_compile research/altcoin-round28-confluence/run_wide.py
 
       - name: Run wide fixed OI-flush research
+        shell: bash
         run: |
+          set -o pipefail
           rm -rf artifacts/altcoin-round29-wide
           mkdir -p artifacts/altcoin-round29-wide
           cd research/altcoin-round28-confluence
           python run_wide.py \
-            --output ../../../artifacts/altcoin-round29-wide \
-            --cache ../../../.cache/binance-altcoin-round29 \
-            --workers 40
-          cd ../../..
+            --output ../../artifacts/altcoin-round29-wide \
+            --cache ../../.cache/binance-altcoin-round29 \
+            --workers 40 2>&1 | tee ../../artifacts/altcoin-round29-wide/run.log
+          cd ../..
           cp research/altcoin-round28-confluence/run.py artifacts/altcoin-round29-wide/base_run.py
           cp research/altcoin-round28-confluence/run_wide.py artifacts/altcoin-round29-wide/run_wide.py
 
