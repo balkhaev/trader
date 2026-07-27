@@ -43,17 +43,18 @@ jobs:
           rm -rf /tmp/round17
           mkdir -p /tmp/round17
           tar -xzf /tmp/round17.tgz -C /tmp/round17
-          python -m py_compile /tmp/round17/*.py research/altcoin-round24-cross-sectional/run.py
+          python -m py_compile /tmp/round17/*.py research/altcoin-round24-cross-sectional/run.py research/altcoin-round24-cross-sectional/run_fast.py
 
       - name: Run cross-sectional research and July check
         run: |
           rm -rf artifacts/altcoin-round24-cross-sectional
           mkdir -p artifacts/altcoin-round24-cross-sectional
-          PYTHONPATH=/tmp/round17 python research/altcoin-round24-cross-sectional/run.py \
+          PYTHONPATH=/tmp/round17 python research/altcoin-round24-cross-sectional/run_fast.py \
             --output artifacts/altcoin-round24-cross-sectional \
             --cache .cache/binance-altcoin-round17 \
             --workers 24
           cp research/altcoin-round24-cross-sectional/run.py artifacts/altcoin-round24-cross-sectional/run.py
+          cp research/altcoin-round24-cross-sectional/run_fast.py artifacts/altcoin-round24-cross-sectional/run_fast.py
           cp research/altcoin-round24-cross-sectional/README.md artifacts/altcoin-round24-cross-sectional/README.md
 
       - name: Upload research artifact
