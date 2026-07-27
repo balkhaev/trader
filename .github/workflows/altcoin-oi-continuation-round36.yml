@@ -1,0 +1,63 @@
+name: Altcoin OI continuation round 36
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-round36-oi-continuation/**"
+      - ".github/workflows/altcoin-oi-continuation-round36.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+
+      - name: Restore verified archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-round36
+          key: altcoin-round36-oi-continuation-20coins-v1
+
+      - name: Compile runner
+        run: |
+          python -m py_compile research/altcoin-round28-confluence/run.py
+          python -m py_compile research/altcoin-round36-oi-continuation/run.py
+
+      - name: Run OI continuation research
+        run: |
+          rm -rf artifacts/altcoin-round36-oi-continuation
+          mkdir -p artifacts/altcoin-round36-oi-continuation
+          python research/altcoin-round36-oi-continuation/run.py \
+            --output artifacts/altcoin-round36-oi-continuation \
+            --cache .cache/binance-altcoin-round36 \
+            --workers 32
+          cp research/altcoin-round36-oi-continuation/run.py artifacts/altcoin-round36-oi-continuation/run.py
+          cp research/altcoin-round36-oi-continuation/README.md artifacts/altcoin-round36-oi-continuation/README.md
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round36-oi-continuation-results
+          path: artifacts/altcoin-round36-oi-continuation
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
