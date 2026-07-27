@@ -1,0 +1,53 @@
+name: Altcoin OI squeeze breakout round 38
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-round38-oi-squeeze/**"
+      - ".github/workflows/altcoin-oi-squeeze-round38.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+      - name: Restore verified Binance archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-round26
+          key: altcoin-round26-usdm-positioning-2025h2-2026july-v1
+      - name: Compile and run OI squeeze research
+        run: |
+          python -m py_compile research/altcoin-round26-positioning/*.py research/altcoin-round38-oi-squeeze/run.py
+          rm -rf artifacts/altcoin-round38-oi-squeeze
+          mkdir -p artifacts/altcoin-round38-oi-squeeze
+          python research/altcoin-round38-oi-squeeze/run.py \
+            --output artifacts/altcoin-round38-oi-squeeze \
+            --cache .cache/binance-altcoin-round26 \
+            --workers 32
+          cp research/altcoin-round38-oi-squeeze/run.py artifacts/altcoin-round38-oi-squeeze/
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round38-oi-squeeze-results
+          path: artifacts/altcoin-round38-oi-squeeze
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
