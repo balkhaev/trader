@@ -1,0 +1,66 @@
+name: Altcoin fixed-rule research round 15
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-round15-fixed/**"
+      - ".github/workflows/altcoin-fixed-round15.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install research dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+
+      - name: Restore verified Binance archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-round15
+          key: altcoin-round15-usdm-15m-2025h2-2026h1-v1
+
+      - name: Decode and verify fixed-rule runner
+        run: |
+          cat research/altcoin-round15-fixed/payload/chunk_*.b64 | base64 --decode > /tmp/round15-payload.tgz
+          echo "464577895b9ddb656edd76ff65477300b24e9559ea037c6768edf2875bd88879  /tmp/round15-payload.tgz" | sha256sum -c -
+          rm -rf /tmp/round15
+          mkdir -p /tmp/round15
+          tar -xzf /tmp/round15-payload.tgz -C /tmp/round15
+          python -m py_compile /tmp/round15/src/*.py
+
+      - name: Run official USD-M fixed-rule multi-coin research
+        run: |
+          rm -rf artifacts/altcoin-round15-fixed
+          mkdir -p artifacts/altcoin-round15-fixed
+          PYTHONPATH=/tmp/round15/src python /tmp/round15/src/run.py \
+            --output artifacts/altcoin-round15-fixed \
+            --cache .cache/binance-altcoin-round15 \
+            --workers 16
+          cp -r /tmp/round15/src artifacts/altcoin-round15-fixed/source
+
+      - name: Upload complete research package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round15-fixed-results
+          path: artifacts/altcoin-round15-fixed
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
