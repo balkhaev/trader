@@ -27,21 +27,23 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
-      - name: Restore verified bookTicker cache
+      - name: Restore verified monthly bookTicker cache
         uses: actions/cache@v4
         with:
           path: .cache/binance-bookticker-round43
-          key: bookticker-round43-sol-xrp-doge-jun25-jul06-v1
+          key: bookticker-round43-sol-xrp-doge-may-june-2026-v2
       - name: Compile and run bid-ask execution research
+        shell: bash
         run: |
-          python -m py_compile research/altcoin-round43-bookticker/run.py
+          set -o pipefail
+          python -m py_compile research/altcoin-round43-bookticker/run.py research/altcoin-round43-bookticker/run_monthly.py
           rm -rf artifacts/altcoin-round43-bookticker
           mkdir -p artifacts/altcoin-round43-bookticker
-          python research/altcoin-round43-bookticker/run.py \
+          python research/altcoin-round43-bookticker/run_monthly.py \
             --output artifacts/altcoin-round43-bookticker \
             --cache .cache/binance-bookticker-round43 \
-            --workers 6
-          cp research/altcoin-round43-bookticker/run.py artifacts/altcoin-round43-bookticker/
+            --workers 3 2>&1 | tee artifacts/altcoin-round43-bookticker/run.log
+          cp research/altcoin-round43-bookticker/run*.py artifacts/altcoin-round43-bookticker/
       - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
