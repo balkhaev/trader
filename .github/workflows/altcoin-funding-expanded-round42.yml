@@ -1,0 +1,53 @@
+name: Altcoin expanded funding carry round 42
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-round42-funding-expanded/**"
+      - ".github/workflows/altcoin-funding-expanded-round42.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+      - name: Restore verified Binance archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-round27
+          key: altcoin-round27-usdm-premium-funding-2025h2-2026july-v1
+      - name: Compile and run expanded funding carry research
+        run: |
+          python -m py_compile research/altcoin-round27-premium/*.py research/altcoin-round41-funding-carry/run.py research/altcoin-round42-funding-expanded/run_expanded.py
+          rm -rf artifacts/altcoin-round42-funding-expanded
+          mkdir -p artifacts/altcoin-round42-funding-expanded
+          PYTHONPATH=research/altcoin-round27-premium python research/altcoin-round42-funding-expanded/run_expanded.py \
+            --output artifacts/altcoin-round42-funding-expanded \
+            --cache .cache/binance-altcoin-round27 \
+            --workers 24
+          cp research/altcoin-round42-funding-expanded/run_expanded.py artifacts/altcoin-round42-funding-expanded/
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round42-funding-expanded-results
+          path: artifacts/altcoin-round42-funding-expanded
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
