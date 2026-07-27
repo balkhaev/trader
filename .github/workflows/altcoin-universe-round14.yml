@@ -27,38 +27,30 @@ jobs:
       - name: Install research dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "pyarrow>=17,<22" "matplotlib>=3.9,<4" "tabulate>=0.9,<1"
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
 
       - name: Restore verified Binance archive cache
         uses: actions/cache@v4
         with:
           path: .cache/binance-altcoin-round14
-          key: altcoin-round14-binance-usdm-5m-2024-2026-v1
+          key: altcoin-round14-binance-usdm-5m-funding-2024-2026-v2
 
-      - name: Decode and verify research runner
+      - name: Compile readable research modules
         run: |
-          cat research/altcoin-round14/payload/chunk_*.b64 | base64 --decode | gzip -dc > /tmp/run_altcoin_research.py
-          echo "5e37043ba740dcf0cfb3b739e028b93b5ce1400ea46ac71f9fff80f29da9b0a7  /tmp/run_altcoin_research.py" | sha256sum -c -
-          # Avoid retaining both raw and feature DataFrames for the full universe.
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('/tmp/run_altcoin_research.py')
-          s = p.read_text()
-          s = s.replace('    raw_map: dict[str, pd.DataFrame] = {}\n', '')
-          s = s.replace('        raw_map[symbol] = raw\n', '')
-          p.write_text(s)
-          PY
-          python -m py_compile /tmp/run_altcoin_research.py
+          python -m py_compile research/altcoin-round14/src/*.py
 
       - name: Run official USD-M multi-coin research
+        shell: bash
         run: |
+          set -o pipefail
           rm -rf artifacts/altcoin-round14
-          mkdir -p artifacts/altcoin-round14
-          python /tmp/run_altcoin_research.py \
+          mkdir -p artifacts/altcoin-round14/source
+          python research/altcoin-round14/src/run.py \
             --output artifacts/altcoin-round14 \
             --cache .cache/binance-altcoin-round14 \
-            --workers 12
-          cp /tmp/run_altcoin_research.py artifacts/altcoin-round14/run_altcoin_research.py
+            --workers 12 2>&1 | tee artifacts/altcoin-round14/run.log
+          cp research/altcoin-round14/src/*.py artifacts/altcoin-round14/source/
+          cp research/altcoin-round14/README.md artifacts/altcoin-round14/
 
       - name: Upload complete research package
         if: always()
