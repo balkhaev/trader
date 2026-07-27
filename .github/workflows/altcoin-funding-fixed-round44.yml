@@ -32,16 +32,16 @@ jobs:
         with:
           path: .cache/binance-altcoin-round27
           key: altcoin-round27-usdm-premium-funding-2025h2-2026july-v1
-      - name: Compile and run fixed July funding carry
+      - name: Compile and run detailed fixed funding carry
         run: |
-          python -m py_compile research/altcoin-round27-premium/*.py research/altcoin-round41-funding-carry/run.py research/altcoin-round44-funding-fixed/run_fixed.py
+          python -m py_compile research/altcoin-round27-premium/*.py research/altcoin-round41-funding-carry/run.py research/altcoin-round44-funding-fixed/run_detailed.py
           rm -rf artifacts/altcoin-round44-funding-fixed
           mkdir -p artifacts/altcoin-round44-funding-fixed
-          PYTHONPATH=research/altcoin-round27-premium python research/altcoin-round44-funding-fixed/run_fixed.py \
+          PYTHONPATH=research/altcoin-round27-premium python research/altcoin-round44-funding-fixed/run_detailed.py \
             --output artifacts/altcoin-round44-funding-fixed \
             --cache .cache/binance-altcoin-round27 \
             --workers 24
-          cp research/altcoin-round44-funding-fixed/run_fixed.py artifacts/altcoin-round44-funding-fixed/
+          cp research/altcoin-round44-funding-fixed/run_detailed.py artifacts/altcoin-round44-funding-fixed/
       - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
