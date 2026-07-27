@@ -32,6 +32,18 @@ jobs:
         with:
           path: .cache/binance-altcoin-round39
           key: altcoin-round39-usdm-1m-2025h2-2026july-v1
+      - name: Patch current Binance kline header aliases
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('research/altcoin-round39-microstructure/run.py')
+          s=p.read_text()
+          old='''    if header: df.columns=[str(c).strip().lower().replace(" ","_") for c in df.columns]\n    else: df=df.iloc[:,:12]; df.columns=COLS[:df.shape[1]]\n    for col in COLS:\n'''
+          new='''    if header:\n        df.columns=[str(c).strip().lower().replace(" ","_") for c in df.columns]\n        aliases={\n            "count":"trades",\n            "number_of_trades":"trades",\n            "taker_buy_volume":"taker_buy_base",\n            "taker_buy_base_asset_volume":"taker_buy_base",\n            "taker_buy_quote_volume":"taker_buy_quote",\n            "taker_buy_quote_asset_volume":"taker_buy_quote",\n            "quote_asset_volume":"quote_volume",\n        }\n        df=df.rename(columns={k:v for k,v in aliases.items() if k in df.columns})\n    else: df=df.iloc[:,:12]; df.columns=COLS[:df.shape[1]]\n    for col in COLS:\n'''
+          if old not in s:
+              raise SystemExit('header parser block not found')
+          p.write_text(s.replace(old,new))
+          PY
       - name: Compile and run microstructure research
         run: |
           python -m py_compile research/altcoin-round39-microstructure/run.py
