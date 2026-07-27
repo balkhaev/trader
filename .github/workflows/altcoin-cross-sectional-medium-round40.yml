@@ -54,13 +54,15 @@ jobs:
           PY
           python -m py_compile /tmp/round17/*.py research/altcoin-round40-cross-sectional/run.py
       - name: Run medium-horizon cross-sectional research
+        shell: bash
         run: |
+          set -o pipefail
           rm -rf artifacts/altcoin-round40-cross-sectional
           mkdir -p artifacts/altcoin-round40-cross-sectional
           PYTHONPATH=/tmp/round17 python research/altcoin-round40-cross-sectional/run.py \
             --output artifacts/altcoin-round40-cross-sectional \
             --cache .cache/binance-altcoin-round17 \
-            --workers 24
+            --workers 24 2>&1 | tee artifacts/altcoin-round40-cross-sectional/run.log
           cp research/altcoin-round40-cross-sectional/run.py artifacts/altcoin-round40-cross-sectional/
       - name: Upload artifact
         if: always()
