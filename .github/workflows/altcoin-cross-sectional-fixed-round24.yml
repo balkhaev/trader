@@ -1,0 +1,59 @@
+name: Altcoin cross-sectional fixed round 24
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-round24-cross-sectional/**"
+      - ".github/workflows/altcoin-cross-sectional-fixed-round24.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+      - name: Restore verified Binance archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-round17
+          key: altcoin-round17-usdm-15m-2025h2-2026july-v1
+      - name: Decode source and compile
+        run: |
+          cat research/altcoin-round17-expanded/payload/chunk_*.b64 | base64 --decode > /tmp/round17.tgz
+          echo "5ed53f4baaeaf22003d44efd7cdbab1c4fa3988d5a0f21d8480f7c436f8ba48d  /tmp/round17.tgz" | sha256sum -c -
+          rm -rf /tmp/round17 && mkdir -p /tmp/round17
+          tar -xzf /tmp/round17.tgz -C /tmp/round17
+          python -m py_compile /tmp/round17/*.py research/altcoin-round24-cross-sectional/*.py
+      - name: Run fixed market-neutral baseline
+        run: |
+          rm -rf artifacts/altcoin-round24-cross-sectional-fixed
+          mkdir -p artifacts/altcoin-round24-cross-sectional-fixed
+          PYTHONPATH=/tmp/round17 python research/altcoin-round24-cross-sectional/run_fixed.py \
+            --output artifacts/altcoin-round24-cross-sectional-fixed \
+            --cache .cache/binance-altcoin-round17 \
+            --workers 24
+          cp research/altcoin-round24-cross-sectional/*.py artifacts/altcoin-round24-cross-sectional-fixed/
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round24-cross-sectional-fixed-results
+          path: artifacts/altcoin-round24-cross-sectional-fixed
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
