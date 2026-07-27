@@ -1,0 +1,61 @@
+name: Altcoin deleveraging confluence round 28
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-round28-confluence/**"
+      - ".github/workflows/altcoin-confluence-round28.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+
+      - name: Restore verified Binance archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-round28
+          key: altcoin-round28-usdm-kline-premium-metrics-2025h2-2026july-v1
+
+      - name: Compile runner
+        run: python -m py_compile research/altcoin-round28-confluence/run.py
+
+      - name: Run confluence and capital sprint research
+        run: |
+          rm -rf artifacts/altcoin-round28-confluence
+          mkdir -p artifacts/altcoin-round28-confluence
+          python research/altcoin-round28-confluence/run.py \
+            --output artifacts/altcoin-round28-confluence \
+            --cache .cache/binance-altcoin-round28 \
+            --workers 32
+          cp research/altcoin-round28-confluence/run.py artifacts/altcoin-round28-confluence/run.py
+          cp research/altcoin-round28-confluence/README.md artifacts/altcoin-round28-confluence/README.md
+
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round28-confluence-results
+          path: artifacts/altcoin-round28-confluence
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
