@@ -133,12 +133,21 @@ def fetch_funding(symbol: str, output: Path) -> pd.DatetimeIndex:
                 break
         except Exception as exc:
             last = exc
-    if records is None:
-        raise RuntimeError(f"funding {symbol}: {last}")
+    fallback = records is None
+    if fallback:
+        schedule = pd.date_range(START.floor("8h"), END, freq="8h", tz="UTC")
+        records = [{"fundingTime": int(ts.timestamp()*1000), "source": "standard_8h_fallback"} for ts in schedule]
     path = output / "funding_raw" / f"{symbol}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(records, indent=2), encoding="utf-8")
-    meta = {"symbol": symbol, "url": used_url, "records": len(records), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    meta = {
+        "symbol": symbol,
+        "url": used_url,
+        "records": len(records),
+        "source": "standard_8h_fallback" if fallback else "public_usdm_endpoint",
+        "endpoint_error": None if not fallback else str(last),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
     (output / "funding_raw" / f"{symbol}.meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     if not records:
         return pd.DatetimeIndex([], tz="UTC")
@@ -280,7 +289,7 @@ def main() -> None:
     base,pt,pc=portfolio(trades); stress,_,_=portfolio(trades,extra_cost=8.0); pt.to_csv(output/"PORTFOLIO_TRADES.csv",index=False); pc.to_csv(output/"PORTFOLIO_EQUITY.csv",index=False)
     summary={"generated_at":datetime.now(UTC).isoformat(),"period":{"start":str(START),"end_exclusive":str(END)},"symbols":SYMBOLS,"aggregate":metrics(trades),"aggregate_stress_20bps":metrics(trades,8.0),"bootstrap":bootstrap_days(trades),"portfolio":{"base_12bps":base,"stress_20bps":stress}}
     (output/"SUMMARY.json").write_text(json.dumps(summary,indent=2),encoding="utf-8")
-    report=f"""# Round 16 — fresh July 2026 forward check\n\nExact six Round 15 candidates, unchanged FLOW_EXHAUST_45M rule. Daily official USD-M 15m archives through 2026-07-26, checksum verified. Funding timestamps fetched from the public USD-M endpoint and saved with hashes.\n\n## Ranking\n\n{ranking.to_markdown(index=False,floatfmt='.2f')}\n\n## Aggregate and portfolio\n\n```json\n{json.dumps(summary,indent=2)}\n```\n\nThe period is only 26 days; mechanical annualization is not a forecast. Closed-equity DD is not intratrade MTM DD.\n"""
+    report=f"""# Round 16 — fresh July 2026 forward check\n\nExact six Round 15 candidates, unchanged FLOW_EXHAUST_45M rule. Daily official USD-M 15m archives through 2026-07-26, checksum verified. Funding endpoint is attempted first; if blocked by hosted CI, every standard 00:00/08:00/16:00 UTC boundary is excluded conservatively.\n\n## Ranking\n\n{ranking.to_markdown(index=False,floatfmt='.2f')}\n\n## Aggregate and portfolio\n\n```json\n{json.dumps(summary,indent=2)}\n```\n\nThe period is only 26 days; mechanical annualization is not a forecast. Closed-equity DD is not intratrade MTM DD.\n"""
     (output/"REPORT_RU.md").write_text(report,encoding="utf-8")
     checks=[]
     for p in sorted(output.rglob("*")):
