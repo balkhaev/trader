@@ -1,0 +1,1 @@
+Patched replay trigger: enriched price frames now carry ATR into execution.
