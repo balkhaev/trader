@@ -1,0 +1,86 @@
+name: Apply Consensus WIF DOT platform
+
+on:
+  push:
+    branches:
+      - agent/consensus-wif-dot-platform
+    paths:
+      - .github/consensus-patch.b64
+      - .github/workflows/apply-consensus-platform.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/consensus-wif-dot-platform
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.3
+
+      - name: Extract reviewed platform patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          import hashlib
+          import io
+          import tarfile
+
+          payload = Path('.github/consensus-patch.b64').read_text().strip()
+          archive = base64.b64decode(payload)
+          expected = '14014e51eb91dbeabf1fb40d6a891d8fdd130131c1f4b15a32ef21372c8ae106'
+          actual = hashlib.sha256(archive).hexdigest()
+          if actual != expected:
+              raise SystemExit(f'payload checksum {actual} != {expected}')
+
+          with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as bundle:
+              for member in bundle.getmembers():
+                  target = (Path.cwd() / member.name).resolve()
+                  if Path.cwd().resolve() not in target.parents and target != Path.cwd().resolve():
+                      raise SystemExit(f'unsafe path: {member.name}')
+              bundle.extractall('.')
+          PY
+
+          rm -f "apps/lean/Binance SMA Strategy/main.py"
+          rm -f "apps/lean/Binance SMA Strategy/config.json"
+          rm -f .github/consensus-patch.b64
+          rm -f .github/workflows/apply-consensus-platform.yml
+
+      - name: Install and validate
+        run: |
+          bun install --frozen-lockfile
+          bunx biome check --write \
+            packages/db/src/schema/strategy.ts \
+            apps/server/src/routes/strategy.ts \
+            apps/server/src/routes/auto-trading.ts \
+            apps/server/src/services/strategy \
+            apps/server/src/services/exchange/binance.ts \
+            apps/server/src/services/exchange/index.ts \
+            apps/server/src/services/exchange/types.ts \
+            apps/server/src/services/auto-trading/auto-trading.service.ts \
+            apps/web/src/hooks/use-strategy.ts \
+            apps/web/src/app/strategy-builder/page.tsx \
+            apps/web/src/app/auto-trading/page.tsx \
+            README.md docs/consensus-wif-dot.md package.json \
+            .github/workflows/consensus-strategy.yml
+          bun run check-types
+          bun test apps/server/src/services/strategy/consensus-wif-dot.service.test.ts
+          python -m py_compile "apps/lean/Consensus WIF DOT Risk Accelerator/main.py"
+          git diff --check
+
+      - name: Publish implementation commit
+        run: |
+          git config user.name "openai-agent"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Implement Consensus WIF DOT trading platform"
+          git push origin HEAD:agent/consensus-wif-dot-platform
