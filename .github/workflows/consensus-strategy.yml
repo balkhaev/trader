@@ -1,0 +1,63 @@
+name: Consensus strategy checks
+
+on:
+  pull_request:
+    paths:
+      - "apps/server/src/services/strategy/**"
+      - "apps/server/src/services/exchange/**"
+      - "apps/server/src/services/auto-trading/**"
+      - "apps/server/src/routes/strategy.ts"
+      - "apps/server/src/routes/auto-trading.ts"
+      - "apps/web/src/app/strategy-builder/**"
+      - "apps/web/src/app/auto-trading/**"
+      - "apps/web/src/hooks/use-strategy.ts"
+      - "packages/db/src/schema/strategy.ts"
+      - "apps/lean/Consensus WIF DOT Risk Accelerator/**"
+      - ".github/workflows/consensus-strategy.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: "test"
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/trader"
+      BETTER_AUTH_SECRET: "consensus-ci-secret-consensus-ci-secret"
+      BETTER_AUTH_URL: "http://localhost:3000"
+      CORS_ORIGIN: "http://localhost:3001"
+      ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.3
+      - run: bun install --frozen-lockfile
+      - name: Deterministic strategy tests
+        run: bun test apps/server/src/services/strategy/consensus-wif-dot.service.test.ts
+      - name: LEAN syntax check
+        run: python -m py_compile "apps/lean/Consensus WIF DOT Risk Accelerator/main.py"
+      - name: Scoped TypeScript checks
+        shell: bash
+        run: |
+          set +e
+          bunx tsc -p apps/server/tsconfig.json --noEmit > server-typecheck.log 2>&1
+          bunx tsc -p apps/web/tsconfig.json --noEmit > web-typecheck.log 2>&1
+          bunx tsc -p packages/db/tsconfig.json --noEmit > db-typecheck.log 2>&1
+          set -e
+
+          cat server-typecheck.log
+          cat web-typecheck.log
+          cat db-typecheck.log
+
+          if grep -E '^(src/routes/(auto-trading|strategy)\.ts|src/services/(auto-trading/auto-trading\.service|exchange/(binance|index|types)|strategy/[^:]+)\.ts)' server-typecheck.log; then
+            exit 1
+          fi
+          if grep -E '^(src/(app/(strategy-builder|auto-trading)/page|hooks/use-strategy)\.tsx?)' web-typecheck.log; then
+            exit 1
+          fi
+          if grep -E '^src/schema/strategy\.ts' db-typecheck.log; then
+            exit 1
+          fi
+
+          echo 'Repository-wide legacy type errors outside the strategy patch are reported above but do not block this scoped check.'
