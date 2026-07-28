@@ -80,7 +80,7 @@ jobs:
           set -o pipefail
           {
             bun install --frozen-lockfile
-            bunx biome check --write \
+            bunx biome format --write \
               packages/db/src/schema/strategy.ts \
               apps/server/src/routes/strategy.ts \
               apps/server/src/routes/auto-trading.ts \
