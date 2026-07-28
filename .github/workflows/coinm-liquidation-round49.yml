@@ -1,0 +1,53 @@
+name: COIN-M liquidation round 49
+
+on:
+  pull_request:
+    paths:
+      - "research/coinm-liquidation-round49/**"
+      - ".github/workflows/coinm-liquidation-round49.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+      - name: Restore verified COIN-M archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-coinm-liquidation-round49
+          key: coinm-liquidation-round49-2024h2-2026h1-v1
+      - name: Compile and run liquidation cluster research
+        run: |
+          python -m py_compile research/coinm-liquidation-round49/run.py
+          rm -rf artifacts/coinm-liquidation-round49
+          mkdir -p artifacts/coinm-liquidation-round49
+          python research/coinm-liquidation-round49/run.py \
+            --output artifacts/coinm-liquidation-round49 \
+            --cache .cache/binance-coinm-liquidation-round49 \
+            --workers 48
+          cp research/coinm-liquidation-round49/run.py artifacts/coinm-liquidation-round49/
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coinm-liquidation-round49-results
+          path: artifacts/coinm-liquidation-round49
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
