@@ -11,12 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import {
-  PageLayout,
-  PageLoading,
-  StatItem,
-  StatRow,
-} from "@/components/layout";
+import { PageLayout, PageLoading, StatItem, StatRow } from "@/components/layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TerminalPanel } from "@/components/ui/terminal-panel";
@@ -87,8 +82,7 @@ export default function ForwardValidationPage() {
   const strategy = canonical.data;
   const closed = (closedSignals ?? []).filter(isStrategySignal);
   const wifTrades = closed.filter(
-    (signal) =>
-      strategyMetadata(signal).strategySignal?.module === "wif_oi_flush"
+    (signal) => strategyMetadata(signal).strategySignal?.module === "wif_oi_flush"
   );
   const dotTrades = closed.filter(
     (signal) =>
@@ -101,13 +95,10 @@ export default function ForwardValidationPage() {
   const losers = returns.filter((value) => value < 0);
   const grossWin = winners.reduce((sum, value) => sum + value, 0);
   const grossLoss = Math.abs(losers.reduce((sum, value) => sum + value, 0));
-  const profitFactor =
-    grossLoss > 0 ? grossWin / grossLoss : winners.length ? Infinity : 0;
+  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : winners.length ? Infinity : 0;
   const totalReturn = returns.reduce((sum, value) => sum + value, 0);
   const sortedReturns = [...returns].sort((a, b) => b - a);
-  const withoutTopThree = sortedReturns
-    .slice(3)
-    .reduce((sum, value) => sum + value, 0);
+  const withoutTopThree = sortedReturns.slice(3).reduce((sum, value) => sum + value, 0);
   const runtimeDrawdown = (() => {
     const runtime = strategy.config.runtime;
     if (!runtime || runtime.highWaterEquity <= 0) return 0;
@@ -144,9 +135,7 @@ export default function ForwardValidationPage() {
     >
       <section
         className={`overflow-hidden rounded-2xl border ${
-          allPassed
-            ? "border-primary/30 bg-primary/5"
-            : "border-yellow-500/25 bg-card/70"
+          allPassed ? "border-primary/30 bg-primary/5" : "border-yellow-500/25 bg-card/70"
         }`}
       >
         <div className="grid gap-0 lg:grid-cols-[1.25fr_0.75fr]">
@@ -162,9 +151,9 @@ export default function ForwardValidationPage() {
               Исторические 100% не включают boost автоматически.
             </h2>
             <p className="mt-2 max-w-3xl text-muted-foreground text-sm leading-6">
-              Переход к базовому accelerator и затем к boost разрешается только
-              после новой серии исполнений с измеренными комиссиями,
-              проскальзыванием и сохранением edge отдельно у WIF и DOT.
+              Переход к базовому accelerator и затем к boost разрешается только после
+              новой серии исполнений с измеренными комиссиями, проскальзыванием и
+              сохранением edge отдельно у WIF и DOT.
             </p>
           </div>
           <div className="border-border/70 border-t bg-background/45 p-5 lg:border-t-0 lg:border-l sm:p-6">
@@ -175,8 +164,7 @@ export default function ForwardValidationPage() {
               {allPassed ? "PASS" : "LOCKED"}
             </div>
             <div className="mt-2 text-muted-foreground text-xs">
-              Boost remains{" "}
-              {allPassed ? "eligible" : "disabled by evidence gate"}
+              Boost remains {allPassed ? "eligible" : "disabled by evidence gate"}
             </div>
           </div>
         </div>
@@ -184,18 +172,9 @@ export default function ForwardValidationPage() {
 
       <StatRow className="mt-4 md:grid-cols-5">
         <StatItem label="New closed trades" value={closed.length} />
-        <StatItem
-          label="WIF / DOT"
-          value={`${wifTrades.length} / ${dotTrades.length}`}
-        />
-        <StatItem
-          label="Profit factor"
-          value={Number.isFinite(profitFactor) ? profitFactor.toFixed(2) : "∞"}
-        />
-        <StatItem
-          label="Closed return"
-          value={`${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`}
-        />
+        <StatItem label="WIF / DOT" value={`${wifTrades.length} / ${dotTrades.length}`} />
+        <StatItem label="Profit factor" value={Number.isFinite(profitFactor) ? profitFactor.toFixed(2) : "∞"} />
+        <StatItem label="Closed return" value={`${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`} />
         <StatItem label="Runtime DD" value={`${runtimeDrawdown.toFixed(2)}%`} />
       </StatRow>
 
@@ -215,9 +194,7 @@ export default function ForwardValidationPage() {
               title="Оба модуля реально исполнялись"
             />
             <GateRow
-              current={
-                Number.isFinite(profitFactor) ? profitFactor.toFixed(2) : "∞"
-              }
+              current={Number.isFinite(profitFactor) ? profitFactor.toFixed(2) : "∞"}
               passed={gates.pf}
               target="PF ≥ 1.35"
               title="Общий Profit Factor"
@@ -244,18 +221,13 @@ export default function ForwardValidationPage() {
         </TerminalPanel>
 
         <div className="space-y-4">
-          <TerminalPanel
-            subtitle="Post-selection research snapshot"
-            title="Historical evidence"
-          >
+          <TerminalPanel subtitle="Post-selection research snapshot" title="Historical evidence">
             <div className="grid gap-3 p-4 sm:grid-cols-2">
               <div className="rounded-xl border bg-background/40 p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <BarChart3 className="size-4 text-primary" />
-                    <span className="font-medium text-sm">
-                      Consensus late year
-                    </span>
+                    <span className="font-medium text-sm">Consensus late year</span>
                   </div>
                   <Badge variant="outline">29 trades</Badge>
                 </div>
@@ -268,9 +240,7 @@ export default function ForwardValidationPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Target className="size-4 text-yellow-500" />
-                    <span className="font-medium text-sm">
-                      Risk Accelerator
-                    </span>
+                    <span className="font-medium text-sm">Risk Accelerator</span>
                   </div>
                   <Badge variant="outline">research</Badge>
                 </div>
@@ -283,13 +253,11 @@ export default function ForwardValidationPage() {
                 <div className="flex items-start gap-3">
                   <FlaskConical className="mt-0.5 size-5 text-primary" />
                   <div>
-                    <p className="font-medium text-sm">
-                      Planning case ≠ historical upside
-                    </p>
+                    <p className="font-medium text-sm">Planning case ≠ historical upside</p>
                     <p className="mt-1 text-muted-foreground text-xs leading-5">
-                      При сохранении 75% наблюдаемого edge медианный accelerator
-                      был около +37.6%. При сохранении 50% — около +7%. Поэтому
-                      100% остаются целевым upside, а не базовым обещанием.
+                      При сохранении 75% наблюдаемого edge медианный accelerator был
+                      около +37.6%. При сохранении 50% — около +7%. Поэтому 100% остаются
+                      целевым upside, а не базовым обещанием.
                     </p>
                   </div>
                 </div>
@@ -301,13 +269,11 @@ export default function ForwardValidationPage() {
             <div className="flex items-start gap-3">
               <TriangleAlert className="mt-0.5 size-5 text-yellow-500" />
               <div>
-                <p className="font-medium text-sm">
-                  Gate использует только новые закрытые сделки
-                </p>
+                <p className="font-medium text-sm">Gate использует только новые закрытые сделки</p>
                 <p className="mt-1 text-muted-foreground text-xs leading-5">
-                  Старые backtests не увеличивают progress. Фактические costs
-                  должны быть ≤ 24 bps; этот параметр должен подтверждаться
-                  execution журналом перед production-допуском.
+                  Старые backtests не увеличивают progress. Фактические costs должны быть
+                  ≤ 24 bps; этот параметр должен подтверждаться execution журналом перед
+                  production-допуском.
                 </p>
               </div>
             </div>
@@ -319,9 +285,8 @@ export default function ForwardValidationPage() {
               <div>
                 <p className="font-medium text-sm">Текущий разрешённый режим</p>
                 <p className="mt-1 text-muted-foreground text-xs leading-5">
-                  До полного PASS: testnet или отдельный micro sleeve, scheduler
-                  выключен, boost не считается подтверждённым. Hard stop
-                  стратегии остаётся sticky.
+                  До полного PASS: testnet или отдельный micro sleeve, scheduler выключен,
+                  boost не считается подтверждённым. Hard stop стратегии остаётся sticky.
                 </p>
               </div>
             </div>

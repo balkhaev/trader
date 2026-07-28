@@ -8,8 +8,8 @@ import {
   Clock3,
   Crosshair,
   Gauge,
-  Play,
   RadioTower,
+  ShieldAlert,
   ShieldCheck,
   TriangleAlert,
   WalletCards,
@@ -17,625 +17,162 @@ import {
   Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { toast } from "sonner";
-import {
-  PageLayout,
-  PageLoading,
-  StatItem,
-  StatRow,
-} from "@/components/layout";
+import { PageLoading, StatItem, StatRow } from "@/components/layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TerminalPanel } from "@/components/ui/terminal-panel";
-import {
-  useAutoTradingConfig,
-  useAutoTradingLogs,
-  useAutoTradingStats,
-} from "@/hooks/use-auto-trading";
+import { useAutoTradingConfig, useAutoTradingLogs, useAutoTradingStats } from "@/hooks/use-auto-trading";
 import { useExchangeOverview } from "@/hooks/use-exchange";
-import { type Signal, useSignals } from "@/hooks/use-signals";
-import { useCanonicalStrategy, useScanStrategy } from "@/hooks/use-strategy";
+import { useClosedSignals, useSignals } from "@/hooks/use-signals";
+import { useCanonicalStrategy } from "@/hooks/use-strategy";
 
-interface StrategySignalMetadata {
+interface StrategyMeta {
   strategyKind?: string;
-  reasoning?: string;
-  strategySignal?: {
-    module?: "wif_oi_flush" | "dot_funding_rebound";
-    stopPrice?: number;
-    takeProfitPrice?: number;
-  };
-  positionPreview?: {
-    riskPercent?: number;
-    grossLeverageAfter?: number;
-  };
+  strategySignal?: { module?: string; stopPrice?: number; takeProfitPrice?: number };
 }
 
-function signalMetadata(signal: Signal) {
-  return (signal.metadata ?? {}) as StrategySignalMetadata;
+function isStrategySignal(signal: { symbol: string; metadata: Record<string, unknown> | null }) {
+  const meta = (signal.metadata ?? {}) as StrategyMeta;
+  return meta.strategyKind === "consensus_wif_dot_v1" || signal.symbol === "WIFUSDT" || signal.symbol === "DOTUSDT";
 }
 
-const money = new Intl.NumberFormat("ru-RU", {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
-function formatUsdt(value: number | string | undefined) {
-  const parsed = typeof value === "number" ? value : Number(value ?? 0);
-  return Number.isFinite(parsed) ? `${money.format(parsed)} USDT` : "—";
-}
-
-function formatPercent(value: number) {
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(2)}%`;
-}
-
-function moduleLabel(signal: Signal) {
-  const module = signalMetadata(signal).strategySignal?.module;
-  if (module === "wif_oi_flush") return "WIF OI FLUSH";
-  if (module === "dot_funding_rebound") return "DOT FUNDING";
-  return signal.symbol;
-}
-
-function StatusLine({
-  ok,
-  label,
-  value,
-}: {
-  ok: boolean;
-  label: string;
-  value: string;
-}) {
+function StatusDot({ active }: { active: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-border/60 border-b py-2 last:border-0">
-      <div className="flex items-center gap-2 text-sm">
-        {ok ? (
-          <CheckCircle2 className="size-4 text-primary" />
-        ) : (
-          <TriangleAlert className="size-4 text-yellow-500" />
-        )}
-        <span>{label}</span>
-      </div>
-      <span className="font-mono text-muted-foreground text-xs">{value}</span>
-    </div>
-  );
-}
-
-function SignalRow({ signal }: { signal: Signal }) {
-  const meta = signalMetadata(signal);
-  const preview = meta.positionPreview;
-  const strategySignal = meta.strategySignal;
-  return (
-    <div className="grid grid-cols-[1fr_auto] gap-3 border-border/60 border-b px-3 py-3 last:border-0 hover:bg-muted/25">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{moduleLabel(signal)}</Badge>
-          <span className="font-mono text-xs">{signal.symbol}</span>
-          <Badge
-            variant={
-              signal.status === "executed"
-                ? "default"
-                : signal.status === "rejected"
-                  ? "destructive"
-                  : "secondary"
-            }
-          >
-            {signal.status}
-          </Badge>
-        </div>
-        <p className="mt-1 line-clamp-1 text-muted-foreground text-xs">
-          {meta.reasoning ?? "Deterministic strategy candidate"}
-        </p>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-muted-foreground">
-          {strategySignal?.stopPrice ? (
-            <span>STOP {Number(strategySignal.stopPrice).toPrecision(6)}</span>
-          ) : null}
-          {strategySignal?.takeProfitPrice ? (
-            <span>
-              TP {Number(strategySignal.takeProfitPrice).toPrecision(6)}
-            </span>
-          ) : null}
-          {preview?.riskPercent ? (
-            <span>RISK {preview.riskPercent.toFixed(2)}%</span>
-          ) : null}
-          {preview?.grossLeverageAfter ? (
-            <span>GROSS {preview.grossLeverageAfter.toFixed(2)}x</span>
-          ) : null}
-        </div>
-      </div>
-      <div className="text-right">
-        <div className="font-mono text-sm">
-          {Number(signal.strength || 0).toFixed(1)}
-        </div>
-        <div className="text-[10px] text-muted-foreground">strength</div>
-        <div className="mt-2 font-mono text-[10px] text-muted-foreground">
-          {new Date(signal.createdAt).toLocaleString("ru-RU", {
-            day: "2-digit",
-            month: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </div>
-      </div>
-    </div>
+    <span className={`inline-flex size-2 rounded-full ${active ? "bg-primary" : "bg-muted-foreground/40"}`} />
   );
 }
 
 export default function StrategyTerminalPage() {
   const canonical = useCanonicalStrategy();
-  const scan = useScanStrategy();
-  const { data: execution } = useAutoTradingConfig();
-  const { data: executionStats } = useAutoTradingStats();
-  const { data: executionLogs } = useAutoTradingLogs(8);
-  const { data: overview } = useExchangeOverview();
-  const { data: allSignals } = useSignals({ limit: 100 });
+  const auto = useAutoTradingConfig();
+  const stats = useAutoTradingStats();
+  const logs = useAutoTradingLogs(8);
+  const signals = useSignals({ limit: 100 });
+  const closed = useClosedSignals({ limit: 100 });
+  const overview = useExchangeOverview();
 
-  if (canonical.isLoading || !canonical.data) {
+  if (canonical.isLoading || auto.isLoading || !canonical.data || !auto.data) {
     return (
-      <PageLayout title="Strategy Terminal">
-        <PageLoading count={8} variant="cards" />
-      </PageLayout>
+      <div className="p-3 sm:p-4">
+        <PageLoading count={10} variant="cards" />
+      </div>
     );
   }
 
   const strategy = canonical.data;
-  const runtime = strategy.config.runtime;
-  const initialEquity = runtime?.initialEquity ?? 0;
-  const equity = runtime?.equity ?? initialEquity;
+  const config = strategy.config;
+  const runtime = config.runtime;
+  const equity = runtime?.equity ?? 0;
+  const initial = runtime?.initialEquity ?? equity;
   const highWater = runtime?.highWaterEquity ?? equity;
-  const returnPercent =
-    initialEquity > 0 ? (equity / initialEquity - 1) * 100 : 0;
-  const drawdownPercent =
-    highWater > 0 ? Math.max(0, (1 - equity / highWater) * 100) : 0;
-  const boostProgress = Math.max(
-    0,
-    Math.min(
-      100,
-      (returnPercent / strategy.config.risk.boostTriggerProfitPercent) * 100
-    )
-  );
-  const hardStopProgress = Math.max(
-    0,
-    Math.min(
-      100,
-      (drawdownPercent / strategy.config.risk.hardStopDrawdownPercent) * 100
-    )
-  );
-  const strategySignals = (allSignals ?? []).filter(
-    (signal) =>
-      signalMetadata(signal).strategyKind === "consensus_wif_dot_v1" ||
-      signal.symbol === "WIFUSDT" ||
-      signal.symbol === "DOTUSDT"
-  );
-  const binanceAccount = overview?.accounts.find(
-    (account) => account.exchange === "binance"
-  );
-  const mode = runtime?.mode ?? "base";
-
-  const runScan = async (execute: boolean) => {
-    try {
-      const result = await scan.mutateAsync(execute);
-      if (!result.scanned) {
-        toast.error(result.reason ?? "Сканирование не выполнено");
-        return;
-      }
-      const executed = result.signals.filter((item) => item.executed).length;
-      toast.success(
-        result.signals.length
-          ? `Найдено ${result.signals.length}, исполнено ${executed}`
-          : "Новых WIF/DOT сигналов нет"
-      );
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Ошибка сканирования"
-      );
-    }
-  };
+  const strategyReturn = initial > 0 ? (equity / initial - 1) * 100 : 0;
+  const drawdown = highWater > 0 ? Math.max(0, (1 - equity / highWater) * 100) : 0;
+  const strategySignals = (signals.data ?? []).filter(isStrategySignal);
+  const pending = strategySignals.filter((signal) => signal.status === "pending");
+  const executed = strategySignals.filter((signal) => signal.status === "executed");
+  const closedTrades = (closed.data ?? []).filter(isStrategySignal);
+  const wins = closedTrades.filter((signal) => signal.isWin === true).length;
+  const totalReturn = closedTrades.reduce((sum, signal) => sum + Number(signal.realizedPnl ?? 0), 0);
+  const mode = (runtime?.mode ?? "base").toUpperCase();
+  const account = overview.data?.accounts.find((item) => item.exchange === "binance");
+  const schedulerOptIn = false;
 
   return (
-    <PageLayout
-      actions={
-        <div className="flex flex-wrap gap-2">
-          <Button
-            disabled={scan.isPending}
-            onClick={() => runScan(false)}
-            size="sm"
-            variant="outline"
-          >
-            <RadioTower className="mr-1 size-3.5" /> Shadow scan
-          </Button>
-          <Button
-            disabled={
-              scan.isPending || !strategy.isActive || !execution?.enabled
-            }
-            onClick={() => runScan(true)}
-            size="sm"
-          >
-            <Play className="mr-1 size-3.5" /> Scan & execute
-          </Button>
-        </div>
-      }
-      subtitle="Единый операционный экран Consensus WIF + DOT Risk Accelerator"
-      title="Strategy Terminal"
-    >
-      <section className="strategy-grid strategy-glow overflow-hidden rounded-2xl border border-primary/20 bg-card/80">
-        <div className="grid gap-0 lg:grid-cols-[1.4fr_1fr]">
+    <div className="p-3 sm:p-4">
+      <section className="strategy-grid overflow-hidden rounded-2xl border bg-card/80">
+        <div className="grid lg:grid-cols-[1.35fr_0.65fr]">
           <div className="p-5 sm:p-7">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={strategy.isActive ? "default" : "secondary"}>
-                {strategy.isActive ? "STRATEGY ACTIVE" : "STRATEGY PAUSED"}
-              </Badge>
-              <Badge variant={mode === "stopped" ? "destructive" : "outline"}>
-                MODE {mode.toUpperCase()}
-              </Badge>
+              <Badge variant={strategy.isActive ? "default" : "secondary"}>{strategy.isActive ? "STRATEGY ACTIVE" : "STRATEGY PAUSED"}</Badge>
+              <Badge variant={auto.data.enabled ? "default" : "outline"}>{auto.data.enabled ? "EXECUTION ARMED" : "EXECUTION OFF"}</Badge>
+              <Badge variant="outline">{mode}</Badge>
               <Badge variant="outline">BINANCE USD-M</Badge>
-              <Badge variant="outline">15M LONG-ONLY</Badge>
             </div>
-            <h2 className="mt-5 max-w-3xl font-semibold text-2xl tracking-tight sm:text-4xl">
-              Два независимых сигнала. Один контролируемый риск-контур.
-            </h2>
-            <p className="mt-3 max-w-3xl text-muted-foreground text-sm leading-6">
-              WIF ловит OI-flush с возвратом цены. DOT торгует отскок после уже
-              опубликованного глубоко отрицательного funding. Размер позиции,
-              защитные ордера, boost, de-risk и hard stop определяет стратегия.
+            <h1 className="mt-5 max-w-4xl font-semibold text-3xl tracking-tight sm:text-5xl">
+              Consensus WIF + DOT
+              <span className="block text-primary">Risk Accelerator Terminal</span>
+            </h1>
+            <p className="mt-4 max-w-3xl text-muted-foreground text-sm leading-6 sm:text-base">
+              Одна детерминированная стратегия, два подтверждённых модуля, явный risk state и никакого универсального AI-trading UX. Терминал показывает только то, что влияет на WIF/DOT scan, execution и forward gate.
             </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link href="/strategy-builder">
-                <Button size="sm" variant="outline">
-                  Открыть стратегию <ArrowRight className="ml-1 size-3.5" />
-                </Button>
-              </Link>
-              <Link href="/auto-trading">
-                <Button size="sm" variant="outline">
-                  Исполнение <ArrowRight className="ml-1 size-3.5" />
-                </Button>
-              </Link>
-              <Link href="/validation">
-                <Button size="sm" variant="ghost">
-                  Forward gate <ShieldCheck className="ml-1 size-3.5" />
-                </Button>
-              </Link>
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Link href="/strategy-builder"><Button><Gauge className="mr-1 size-4" /> Blueprint</Button></Link>
+              <Link href="/signals"><Button variant="outline"><RadioTower className="mr-1 size-4" /> Signals</Button></Link>
+              <Link href="/auto-trading"><Button variant="outline"><Activity className="mr-1 size-4" /> Execution</Button></Link>
+              <Link href="/validation"><Button variant="ghost">Forward gate <ArrowRight className="ml-1 size-4" /></Button></Link>
             </div>
           </div>
-
           <div className="border-border/70 border-t bg-background/45 p-5 lg:border-t-0 lg:border-l sm:p-7">
-            <div className="text-[10px] text-muted-foreground uppercase tracking-[0.2em]">
-              Closed equity state
+            <div className="text-[10px] text-muted-foreground uppercase tracking-widest">Runtime equity</div>
+            <div className="mt-2 font-mono text-4xl">{equity ? equity.toLocaleString("ru-RU", { maximumFractionDigits: 0 }) : "—"}</div>
+            <div className="mt-1 text-muted-foreground text-xs">USDT closed equity</div>
+            <div className="mt-6 grid grid-cols-2 gap-2">
+              <div className="rounded-xl border bg-card/60 p-3"><div className="text-[9px] text-muted-foreground uppercase">Return</div><div className={`mt-1 font-mono text-xl ${strategyReturn >= 0 ? "text-primary" : "text-destructive"}`}>{strategyReturn >= 0 ? "+" : ""}{strategyReturn.toFixed(2)}%</div></div>
+              <div className="rounded-xl border bg-card/60 p-3"><div className="text-[9px] text-muted-foreground uppercase">Drawdown</div><div className="mt-1 font-mono text-xl">{drawdown.toFixed(2)}%</div></div>
             </div>
-            <div className="mt-2 font-mono font-semibold text-3xl">
-              {formatUsdt(equity)}
-            </div>
-            <div
-              className={`mt-1 font-mono text-sm ${
-                returnPercent >= 0 ? "text-primary" : "text-destructive"
-              }`}
-            >
-              {formatPercent(returnPercent)} от initial equity
-            </div>
-
-            <div className="mt-6 space-y-4">
-              <div>
-                <div className="mb-1.5 flex justify-between text-xs">
-                  <span className="text-muted-foreground">Путь к boost</span>
-                  <span className="font-mono">
-                    {returnPercent.toFixed(2)} /{" "}
-                    {strategy.config.risk.boostTriggerProfitPercent}%
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all"
-                    style={{ width: `${boostProgress}%` }}
-                  />
-                </div>
-              </div>
-              <div>
-                <div className="mb-1.5 flex justify-between text-xs">
-                  <span className="text-muted-foreground">
-                    Просадка к hard stop
-                  </span>
-                  <span className="font-mono">
-                    {drawdownPercent.toFixed(2)} /{" "}
-                    {strategy.config.risk.hardStopDrawdownPercent}%
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-destructive transition-all"
-                    style={{ width: `${hardStopProgress}%` }}
-                  />
-                </div>
-              </div>
+            <div className="mt-4 space-y-2 font-mono text-[10px] text-muted-foreground">
+              <div className="flex items-center justify-between"><span>Strategy</span><span className="flex items-center gap-2"><StatusDot active={strategy.isActive} />{strategy.isActive ? "active" : "paused"}</span></div>
+              <div className="flex items-center justify-between"><span>Execution</span><span className="flex items-center gap-2"><StatusDot active={auto.data.enabled} />{auto.data.enabled ? "armed" : "off"}</span></div>
+              <div className="flex items-center justify-between"><span>Scheduler</span><span className="flex items-center gap-2"><StatusDot active={schedulerOptIn} />opt-in env</span></div>
             </div>
           </div>
         </div>
       </section>
 
-      <StatRow className="mt-4 md:grid-cols-5">
-        <StatItem label="Risk mode" value={mode.toUpperCase()} />
-        <StatItem label="Closed return" value={formatPercent(returnPercent)} />
-        <StatItem label="Drawdown" value={`${drawdownPercent.toFixed(2)}%`} />
-        <StatItem label="Strategy signals" value={strategySignals.length} />
-        <StatItem
-          label="Executed today"
-          value={executionStats?.todayExecuted ?? 0}
-        />
+      <StatRow className="mt-4 md:grid-cols-6">
+        <StatItem label="Risk mode" value={mode} />
+        <StatItem label="Pending signals" value={pending.length} />
+        <StatItem label="Open/executed" value={executed.length} />
+        <StatItem label="Closed trades" value={closedTrades.length} />
+        <StatItem label="Win rate" value={closedTrades.length ? `${((wins / closedTrades.length) * 100).toFixed(1)}%` : "—"} />
+        <StatItem label="Closed return" value={closedTrades.length ? `${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%` : "—"} />
       </StatRow>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <TerminalPanel
-              subtitle="Tuesday / Friday / Sunday"
-              title="WIF OI Flush"
-            >
-              <div className="space-y-4 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
-                    <Waves className="size-5 text-primary" />
-                  </div>
-                  <Badge
-                    variant={
-                      strategy.config.wif.enabled ? "default" : "secondary"
-                    }
-                  >
-                    {strategy.config.wif.enabled ? "ENABLED" : "OFF"}
-                  </Badge>
-                </div>
-                <p className="text-muted-foreground text-xs leading-5">
-                  Падение за 45 минут не менее 2 ATR, всплеск объёма, нижняя
-                  тень, возврат закрытия, OI z ≤ −1 и strength ≥ 3,5.
-                </p>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-lg border bg-background/40 p-2">
-                    <div className="font-mono text-sm">
-                      {strategy.config.wif.stopAtr} ATR
-                    </div>
-                    <div className="text-[9px] text-muted-foreground uppercase">
-                      stop
-                    </div>
-                  </div>
-                  <div className="rounded-lg border bg-background/40 p-2">
-                    <div className="font-mono text-sm">
-                      {strategy.config.wif.targetR}R
-                    </div>
-                    <div className="text-[9px] text-muted-foreground uppercase">
-                      target
-                    </div>
-                  </div>
-                  <div className="rounded-lg border bg-background/40 p-2">
-                    <div className="font-mono text-sm">
-                      {strategy.config.wif.maxHoldMinutes}m
-                    </div>
-                    <div className="text-[9px] text-muted-foreground uppercase">
-                      hold
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </TerminalPanel>
+        <div className="grid gap-4 md:grid-cols-2">
+          <TerminalPanel subtitle="Tue / Fri / Sun · 15m" title="WIF OI Flush Reclaim">
+            <div className="space-y-4 p-4">
+              <div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-primary/10"><Waves className="size-5 text-primary" /></div><div><p className="font-medium text-sm">Liquidation rebound</p><p className="text-muted-foreground text-xs">OI contracts while price reclaims the candle</p></div></div>
+              <div className="grid grid-cols-3 gap-2 text-center"><div className="rounded-lg border bg-background/40 p-2"><div className="font-mono">{config.wif.stopAtr} ATR</div><div className="text-[9px] text-muted-foreground uppercase">stop</div></div><div className="rounded-lg border bg-background/40 p-2"><div className="font-mono">{config.wif.targetR}R</div><div className="text-[9px] text-muted-foreground uppercase">target</div></div><div className="rounded-lg border bg-background/40 p-2"><div className="font-mono">{config.wif.maxHoldMinutes}m</div><div className="text-[9px] text-muted-foreground uppercase">exit</div></div></div>
+              <div className="flex items-center justify-between border-border/60 border-t pt-3 text-xs"><span className="text-muted-foreground">Base / boost risk</span><span className="font-mono">{config.risk.baseWifRiskPercent}% / {config.risk.boostWifRiskPercent}%</span></div>
+            </div>
+          </TerminalPanel>
 
-            <TerminalPanel
-              subtitle="Known funding only"
-              title="DOT Funding Rebound"
-            >
-              <div className="space-y-4 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-yellow-500/10">
-                    <CircleDollarSign className="size-5 text-yellow-500" />
-                  </div>
-                  <Badge
-                    variant={
-                      strategy.config.dot.enabled ? "default" : "secondary"
-                    }
-                  >
-                    {strategy.config.dot.enabled ? "ENABLED" : "OFF"}
-                  </Badge>
-                </div>
-                <p className="text-muted-foreground text-xs leading-5">
-                  Long через 15 минут после funding: Mon/Tue ≤ −2,25 bps,
-                  Fri/Sat/Sun ≤ −2,50 bps. Среда и четверг пропускаются.
-                </p>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-lg border bg-background/40 p-2">
-                    <div className="font-mono text-sm">
-                      {strategy.config.dot.stopAtr} ATR
-                    </div>
-                    <div className="text-[9px] text-muted-foreground uppercase">
-                      stop
-                    </div>
-                  </div>
-                  <div className="rounded-lg border bg-background/40 p-2">
-                    <div className="font-mono text-sm">
-                      {strategy.config.dot.targetR}R
-                    </div>
-                    <div className="text-[9px] text-muted-foreground uppercase">
-                      target
-                    </div>
-                  </div>
-                  <div className="rounded-lg border bg-background/40 p-2">
-                    <div className="font-mono text-sm">
-                      {strategy.config.dot.maxHoldMinutes / 60}h
-                    </div>
-                    <div className="text-[9px] text-muted-foreground uppercase">
-                      hold
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </TerminalPanel>
-          </div>
+          <TerminalPanel subtitle="Known negative funding · long" title="DOT Funding Rebound">
+            <div className="space-y-4 p-4">
+              <div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-yellow-500/10"><CircleDollarSign className="size-5 text-yellow-500" /></div><div><p className="font-medium text-sm">Post-funding drift</p><p className="text-muted-foreground text-xs">Entry 15 minutes after published funding</p></div></div>
+              <div className="grid grid-cols-3 gap-2 text-center"><div className="rounded-lg border bg-background/40 p-2"><div className="font-mono">{config.dot.stopAtr} ATR</div><div className="text-[9px] text-muted-foreground uppercase">stop</div></div><div className="rounded-lg border bg-background/40 p-2"><div className="font-mono">{config.dot.targetR}R</div><div className="text-[9px] text-muted-foreground uppercase">target</div></div><div className="rounded-lg border bg-background/40 p-2"><div className="font-mono">{config.dot.maxHoldMinutes / 60}h</div><div className="text-[9px] text-muted-foreground uppercase">exit</div></div></div>
+              <div className="flex items-center justify-between border-border/60 border-t pt-3 text-xs"><span className="text-muted-foreground">Base / boost risk</span><span className="font-mono">{config.risk.baseDotRiskPercent}% / {config.risk.boostDotRiskPercent}%</span></div>
+            </div>
+          </TerminalPanel>
 
-          <TerminalPanel
-            action={
-              <Link href="/signals">
-                <Button size="sm" variant="ghost">
-                  Все сигналы <ArrowRight className="ml-1 size-3" />
-                </Button>
-              </Link>
-            }
-            subtitle={`${strategySignals.length} strategy events`}
-            title="Последние сигналы"
-          >
-            {strategySignals.length ? (
-              strategySignals
-                .slice(0, 6)
-                .map((signal) => <SignalRow key={signal.id} signal={signal} />)
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Crosshair className="size-8 text-muted-foreground/50" />
-                <p className="mt-3 text-sm">Сигналов пока нет</p>
-                <p className="mt-1 max-w-md text-muted-foreground text-xs">
-                  Запустите shadow scan. Сигнал появится только при выполнении
-                  полного набора WIF или DOT условий.
-                </p>
-              </div>
-            )}
+          <TerminalPanel subtitle="Equity-driven allocation" title="Risk Accelerator">
+            <div className="grid grid-cols-3 gap-2 p-4 text-center"><div className="rounded-xl border bg-background/40 p-3"><Zap className="mx-auto size-4 text-primary" /><div className="mt-2 font-mono text-lg">+{config.risk.boostTriggerProfitPercent}%</div><div className="text-[9px] text-muted-foreground uppercase">boost trigger</div></div><div className="rounded-xl border bg-background/40 p-3"><ShieldCheck className="mx-auto size-4 text-primary" /><div className="mt-2 font-mono text-lg">−{config.risk.deRiskDrawdownPercent}%</div><div className="text-[9px] text-muted-foreground uppercase">de-risk</div></div><div className="rounded-xl border bg-background/40 p-3"><ShieldAlert className="mx-auto size-4 text-destructive" /><div className="mt-2 font-mono text-lg">−{config.risk.hardStopDrawdownPercent}%</div><div className="text-[9px] text-muted-foreground uppercase">hard stop</div></div></div>
+          </TerminalPanel>
+
+          <TerminalPanel subtitle="Operational venue" title="Binance USD-M">
+            <div className="space-y-3 p-4"><div className="flex items-center gap-3"><WalletCards className="size-5 text-primary" /><div><p className="text-sm">{account?.accountName ?? "Account not connected"}</p><p className="text-muted-foreground text-xs">{account ? `${account.testnet ? "TESTNET" : "LIVE"} · ${account.positionsCount} positions` : "Connect Binance before execution"}</p></div></div><div className="grid grid-cols-2 gap-2"><div className="rounded-lg border bg-background/40 p-3"><div className="text-[9px] text-muted-foreground uppercase">Available</div><div className="mt-1 font-mono">{account ? Number(account.availableBalance).toLocaleString("ru-RU", { maximumFractionDigits: 0 }) : "—"}</div></div><div className="rounded-lg border bg-background/40 p-3"><div className="text-[9px] text-muted-foreground uppercase">Gross cap</div><div className="mt-1 font-mono">{config.execution.maxGrossLeverage}x</div></div></div></div>
           </TerminalPanel>
         </div>
 
         <div className="space-y-4">
-          <TerminalPanel title="Operational readiness">
-            <div className="p-4">
-              <StatusLine
-                label="Стратегия"
-                ok={strategy.isActive}
-                value={strategy.isActive ? "active" : "paused"}
-              />
-              <StatusLine
-                label="Исполнение"
-                ok={Boolean(execution?.enabled)}
-                value={execution?.enabled ? "enabled" : "disabled"}
-              />
-              <StatusLine
-                label="Binance account"
-                ok={Boolean(binanceAccount)}
-                value={
-                  binanceAccount?.testnet
-                    ? "testnet"
-                    : binanceAccount
-                      ? "live"
-                      : "not connected"
-                }
-              />
-              <StatusLine
-                label="Risk state"
-                ok={mode !== "stopped"}
-                value={mode}
-              />
-              <StatusLine
-                label="Position limit"
-                ok={strategy.config.execution.maxPositions <= 2}
-                value={`${strategy.config.execution.maxPositions} max`}
-              />
-            </div>
-          </TerminalPanel>
-
-          <TerminalPanel
-            subtitle="Risk lives inside strategy"
-            title="Accelerator"
-          >
-            <div className="space-y-3 p-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border bg-background/40 p-3">
-                  <div className="flex items-center gap-2 text-muted-foreground text-xs">
-                    <Gauge className="size-3.5" /> Base
-                  </div>
-                  <div className="mt-2 font-mono text-lg">
-                    {strategy.config.risk.baseWifRiskPercent}% /{" "}
-                    {strategy.config.risk.baseDotRiskPercent}%
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">
-                    WIF / DOT stop-risk
-                  </div>
+          <TerminalPanel subtitle="Latest execution decisions" title="Execution Feed">
+            <div className="max-h-[430px] overflow-y-auto">
+              {logs.data?.logs.length ? logs.data.logs.map((log) => (
+                <div className="grid grid-cols-[auto_1fr_auto] gap-3 border-border/60 border-b px-3 py-3 last:border-0" key={log.id}>
+                  <div className="flex size-8 items-center justify-center rounded-lg bg-muted">{log.action === "executed" ? <CheckCircle2 className="size-4 text-primary" /> : log.action === "error" ? <TriangleAlert className="size-4 text-destructive" /> : <Clock3 className="size-4 text-yellow-500" />}</div>
+                  <div className="min-w-0"><div className="flex items-center gap-2"><Badge variant={log.action === "error" ? "destructive" : "secondary"}>{log.action}</Badge>{log.details?.symbol ? <span className="font-mono text-xs">{String(log.details.symbol)}</span> : null}</div><p className="mt-1 line-clamp-2 text-muted-foreground text-xs">{log.reason}</p></div>
+                  <span className="font-mono text-[9px] text-muted-foreground">{new Date(log.createdAt).toLocaleTimeString("ru-RU")}</span>
                 </div>
-                <div className="rounded-xl border border-primary/25 bg-primary/5 p-3">
-                  <div className="flex items-center gap-2 text-primary text-xs">
-                    <Zap className="size-3.5" /> Boost
-                  </div>
-                  <div className="mt-2 font-mono text-lg">
-                    {strategy.config.risk.boostWifRiskPercent}% /{" "}
-                    {strategy.config.risk.boostDotRiskPercent}%
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">
-                    after new HWM +15%
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border bg-background/40 p-3 text-xs leading-5">
-                <div className="flex items-center gap-2 font-medium">
-                  <ShieldCheck className="size-4 text-primary" /> Automatic
-                  protection
-                </div>
-                <p className="mt-1 text-muted-foreground">
-                  De-risk при {strategy.config.risk.deRiskDrawdownPercent}% от
-                  HWM, sticky hard stop при{" "}
-                  {strategy.config.risk.hardStopDrawdownPercent}%, gross cap{" "}
-                  {strategy.config.execution.maxGrossLeverage}x.
-                </p>
-              </div>
-            </div>
-          </TerminalPanel>
-
-          <TerminalPanel
-            subtitle="Последние действия движка"
-            title="Execution feed"
-          >
-            <div className="max-h-[320px] overflow-y-auto">
-              {executionLogs?.logs.length ? (
-                executionLogs.logs.map((log) => (
-                  <div
-                    className="flex items-start gap-3 border-border/60 border-b px-3 py-3 last:border-0"
-                    key={log.id}
-                  >
-                    <div className="mt-0.5 flex size-7 items-center justify-center rounded-lg bg-muted">
-                      {log.action === "executed" ? (
-                        <Activity className="size-3.5 text-primary" />
-                      ) : log.action === "error" ? (
-                        <TriangleAlert className="size-3.5 text-destructive" />
-                      ) : (
-                        <Clock3 className="size-3.5 text-yellow-500" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-xs uppercase">
-                          {log.action}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {new Date(log.createdAt).toLocaleTimeString("ru-RU")}
-                        </span>
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-muted-foreground text-xs">
-                        {log.reason}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="p-5 text-center text-muted-foreground text-xs">
-                  Execution feed пуст.
-                </div>
-              )}
+              )) : <div className="py-16 text-center"><Activity className="mx-auto size-9 text-muted-foreground/40" /><p className="mt-3 text-sm">Execution feed пуст</p><p className="mt-1 text-muted-foreground text-xs">Селективная стратегия может долго не давать сигналов.</p></div>}
             </div>
           </TerminalPanel>
 
           <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4">
-            <div className="flex items-start gap-3">
-              <WalletCards className="mt-0.5 size-5 text-yellow-500" />
-              <div>
-                <p className="font-medium text-sm">
-                  Live scheduler выключен по умолчанию
-                </p>
-                <p className="mt-1 text-muted-foreground text-xs leading-5">
-                  Для автоматического цикла требуется явный opt-in через
-                  STRATEGY_SCHEDULER_ENABLED=true. До forward gate используйте
-                  Binance testnet и shadow scan.
-                </p>
-              </div>
-            </div>
+            <div className="flex items-start gap-3"><TriangleAlert className="mt-0.5 size-5 text-yellow-500" /><div><p className="font-medium text-sm">100% CAGR — upside, не обещание</p><p className="mt-1 text-muted-foreground text-xs leading-5">Forward gate требует 30 новых сделок, PF ≥ 1.35, положительный результат без трёх лучших и costs ≤ 24 bps. До этого boost остаётся исследовательским режимом.</p></div></div>
           </div>
         </div>
       </div>
-    </PageLayout>
+    </div>
   );
 }

@@ -18,12 +18,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  PageLayout,
-  PageLoading,
-  StatItem,
-  StatRow,
-} from "@/components/layout";
+import { PageLayout, PageLoading, StatItem, StatRow } from "@/components/layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -108,9 +103,7 @@ function LogRow({
             {log.action}
           </Badge>
           {log.details?.symbol ? (
-            <span className="font-mono text-xs">
-              {String(log.details.symbol)}
-            </span>
+            <span className="font-mono text-xs">{String(log.details.symbol)}</span>
           ) : null}
           {log.details?.module ? (
             <span className="font-mono text-[10px] text-muted-foreground uppercase">
@@ -158,8 +151,7 @@ export default function ExecutionConsolePage() {
   const selectedAccount = accounts?.find(
     (account) => account.id === value("exchangeAccountId")
   );
-  const binanceAccounts =
-    accounts?.filter((account) => account.exchange === "binance") ?? [];
+  const binanceAccounts = accounts?.filter((account) => account.exchange === "binance") ?? [];
   const preflight = {
     strategy: strategy.isActive,
     account: Boolean(selectedAccount),
@@ -168,10 +160,7 @@ export default function ExecutionConsolePage() {
     risk: strategy.config.runtime?.mode !== "stopped",
   };
   const canEnable =
-    preflight.strategy &&
-    preflight.account &&
-    preflight.binance &&
-    preflight.risk;
+    preflight.strategy && preflight.account && preflight.binance && preflight.risk;
 
   const save = () => {
     update.mutate(local, {
@@ -185,16 +174,12 @@ export default function ExecutionConsolePage() {
 
   const toggleExecution = () => {
     if (!config.enabled && !canEnable) {
-      toast.error(
-        "Preflight не пройден: проверьте стратегию и Binance account"
-      );
+      toast.error("Preflight не пройден: проверьте стратегию и Binance account");
       return;
     }
     toggle.mutate(undefined, {
       onSuccess: (result) =>
-        toast.success(
-          result.enabled ? "Execution enabled" : "Execution disabled"
-        ),
+        toast.success(result.enabled ? "Execution enabled" : "Execution disabled"),
       onError: (error) => toast.error(error.message),
     });
   };
@@ -204,12 +189,7 @@ export default function ExecutionConsolePage() {
       actions={
         <div className="flex gap-2">
           {Object.keys(local).length > 0 ? (
-            <Button
-              disabled={update.isPending}
-              onClick={save}
-              size="sm"
-              variant="outline"
-            >
+            <Button disabled={update.isPending} onClick={save} size="sm" variant="outline">
               Сохранить guardrails
             </Button>
           ) : null}
@@ -248,13 +228,12 @@ export default function ExecutionConsolePage() {
               <Badge variant="outline">WIF + DOT ONLY</Badge>
             </div>
             <h2 className="mt-4 font-semibold text-2xl tracking-tight">
-              Execution не выбирает сделки — он исполняет уже проверенное
-              решение стратегии.
+              Execution не выбирает сделки — он исполняет уже проверенное решение стратегии.
             </h2>
             <p className="mt-2 max-w-3xl text-muted-foreground text-sm leading-6">
-              Quantity, absolute stop, take profit, time exit, gross cap и risk
-              mode приходят из активного strategy blueprint. Здесь остаются
-              только account, operational caps и журнал исполнения.
+              Quantity, absolute stop, take profit, time exit, gross cap и risk mode
+              приходят из активного strategy blueprint. Здесь остаются только account,
+              operational caps и журнал исполнения.
             </p>
           </div>
           <div className="border-border/70 border-t bg-background/45 p-5 lg:border-t-0 lg:border-l sm:p-6">
@@ -285,10 +264,7 @@ export default function ExecutionConsolePage() {
         <StatItem label="Executed today" value={stats?.todayExecuted ?? 0} />
         <StatItem label="Skipped today" value={stats?.todaySkipped ?? 0} />
         <StatItem label="Errors today" value={stats?.todayErrors ?? 0} />
-        <StatItem
-          label="Strategy mode"
-          value={(strategy.config.runtime?.mode ?? "base").toUpperCase()}
-        />
+        <StatItem label="Strategy mode" value={(strategy.config.runtime?.mode ?? "base").toUpperCase()} />
       </StatRow>
 
       {config.enabled ? (
@@ -298,8 +274,8 @@ export default function ExecutionConsolePage() {
             <p className="font-medium text-sm">Execution активен</p>
             <p className="mt-1 text-muted-foreground text-xs leading-5">
               Движок принимает только webhook-сигналы с strategyKind
-              consensus_wif_dot_v1 и symbols WIFUSDT/DOTUSDT. При сбое
-              постановки защиты стратегия выполняет emergency flatten.
+              consensus_wif_dot_v1 и symbols WIFUSDT/DOTUSDT. При сбое постановки
+              защиты стратегия выполняет emergency flatten.
             </p>
           </div>
         </div>
@@ -327,13 +303,7 @@ export default function ExecutionConsolePage() {
               <PreflightRow
                 ok={preflight.testnet}
                 title="Environment"
-                value={
-                  selectedAccount?.testnet
-                    ? "testnet"
-                    : selectedAccount
-                      ? "live"
-                      : "unknown"
-                }
+                value={selectedAccount?.testnet ? "testnet" : selectedAccount ? "live" : "unknown"}
               />
               <PreflightRow
                 ok={preflight.risk}
@@ -360,8 +330,7 @@ export default function ExecutionConsolePage() {
                     <SelectItem value="none">No account selected</SelectItem>
                     {binanceAccounts.map((account) => (
                       <SelectItem key={account.id} value={account.id}>
-                        {account.name}{" "}
-                        {account.testnet ? "[TESTNET]" : "[LIVE]"}
+                        {account.name} {account.testnet ? "[TESTNET]" : "[LIVE]"}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -412,12 +381,11 @@ export default function ExecutionConsolePage() {
 
               <div className="rounded-xl border bg-background/40 p-3">
                 <div className="flex items-center gap-2 font-medium text-sm">
-                  <LockKeyhole className="size-4 text-primary" /> Strategy-owned
-                  risk
+                  <LockKeyhole className="size-4 text-primary" /> Strategy-owned risk
                 </div>
                 <p className="mt-1 text-muted-foreground text-xs leading-5">
-                  Stop-risk, stop price, target, time exit, boost, de-risk и
-                  hard stop не редактируются на execution-экране.
+                  Stop-risk, stop price, target, time exit, boost, de-risk и hard stop
+                  не редактируются на execution-экране.
                 </p>
               </div>
             </div>
@@ -427,12 +395,10 @@ export default function ExecutionConsolePage() {
             <div className="flex items-start gap-3">
               <ShieldCheck className="mt-0.5 size-5 text-primary" />
               <div>
-                <p className="font-medium text-sm">
-                  Рекомендуемый порядок запуска
-                </p>
+                <p className="font-medium text-sm">Рекомендуемый порядок запуска</p>
                 <p className="mt-1 text-muted-foreground text-xs leading-5">
-                  Binance testnet → shadow scan → execution enabled → scheduler
-                  opt-in. Live account не является default-сценарием.
+                  Binance testnet → shadow scan → execution enabled → scheduler opt-in.
+                  Live account не является default-сценарием.
                 </p>
               </div>
             </div>
@@ -456,8 +422,8 @@ export default function ExecutionConsolePage() {
                 <WalletCards className="size-9 text-muted-foreground/50" />
                 <p className="mt-3 text-sm">Execution feed пуст</p>
                 <p className="mt-1 max-w-sm text-muted-foreground text-xs">
-                  Shadow scan создаёт pending-кандидатов. Реальные execution
-                  events появятся только после прохождения preflight.
+                  Shadow scan создаёт pending-кандидатов. Реальные execution events
+                  появятся только после прохождения preflight.
                 </p>
               </div>
             )}
@@ -470,25 +436,19 @@ export default function ExecutionConsolePage() {
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <Zap className="size-4 text-primary" /> Entry
           </div>
-          <p className="mt-2 text-sm">
-            Market order с размером от strategy stop-risk.
-          </p>
+          <p className="mt-2 text-sm">Market order с размером от strategy stop-risk.</p>
         </div>
         <div className="rounded-xl border bg-card/70 p-4">
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <ShieldCheck className="size-4 text-primary" /> Protection
           </div>
-          <p className="mt-2 text-sm">
-            Absolute stop/target и emergency flatten.
-          </p>
+          <p className="mt-2 text-sm">Absolute stop/target и emergency flatten.</p>
         </div>
         <div className="rounded-xl border bg-card/70 p-4">
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <ServerCog className="size-4 text-primary" /> Scheduler
           </div>
-          <p className="mt-2 text-sm">
-            Выключен без STRATEGY_SCHEDULER_ENABLED=true.
-          </p>
+          <p className="mt-2 text-sm">Выключен без STRATEGY_SCHEDULER_ENABLED=true.</p>
         </div>
       </div>
     </PageLayout>

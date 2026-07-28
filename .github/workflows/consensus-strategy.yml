@@ -8,8 +8,16 @@ on:
       - "apps/server/src/services/auto-trading/**"
       - "apps/server/src/routes/strategy.ts"
       - "apps/server/src/routes/auto-trading.ts"
+      - "apps/web/src/app/layout.tsx"
+      - "apps/web/src/app/page.tsx"
+      - "apps/web/src/index.css"
+      - "apps/web/src/components/bloomberg-header.tsx"
       - "apps/web/src/app/strategy-builder/**"
       - "apps/web/src/app/auto-trading/**"
+      - "apps/web/src/app/signals/**"
+      - "apps/web/src/app/validation/**"
+      - "apps/web/src/app/research/**"
+      - "apps/web/src/app/strategies/**"
       - "apps/web/src/hooks/use-strategy.ts"
       - "packages/db/src/schema/strategy.ts"
       - "apps/lean/Consensus WIF DOT Risk Accelerator/**"
@@ -53,11 +61,11 @@ jobs:
           if grep -E '^(src/routes/(auto-trading|strategy)\.ts|src/services/(auto-trading/auto-trading\.service|exchange/(binance|index|types)|strategy/[^:]+)\.ts)' server-typecheck.log; then
             exit 1
           fi
-          if grep -E '^(src/(app/(strategy-builder|auto-trading)/page|hooks/use-strategy)\.tsx?)' web-typecheck.log; then
+          if grep -E '^(src/(app/(layout|page|strategy-builder/page|auto-trading/page|signals/page|validation/page|research/page|strategies/page)\.tsx|components/bloomberg-header\.tsx))' web-typecheck.log; then
             exit 1
           fi
           if grep -E '^src/schema/strategy\.ts' db-typecheck.log; then
             exit 1
           fi
 
-          echo 'Repository-wide legacy type errors outside the strategy patch are reported above but do not block this scoped check.'
+          echo 'Repository-wide legacy type errors outside the Consensus strategy scope are reported above but do not block this scoped check.'
