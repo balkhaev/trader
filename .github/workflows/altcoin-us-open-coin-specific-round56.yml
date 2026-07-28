@@ -1,0 +1,43 @@
+name: Altcoin US-open coin-specific round 56
+
+on:
+  pull_request:
+    paths:
+      - 'research/altcoin-us-open-round56/**'
+      - '.github/workflows/altcoin-us-open-coin-specific-round56.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install 'numpy>=2.0,<3' 'pandas>=2.2,<3' 'requests>=2.32,<3' 'tabulate>=0.9,<1'
+      - name: Restore verified archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-us-open-round52
+          key: altcoin-us-open-round52-usdm-2024-2026-v1
+      - name: Run research
+        run: |
+          python -m py_compile research/altcoin-us-open-round52/*.py research/altcoin-us-open-round56/run_coin_specific.py
+          rm -rf artifacts/altcoin-us-open-round56
+          mkdir -p artifacts/altcoin-us-open-round56
+          python research/altcoin-us-open-round56/run_coin_specific.py --output artifacts/altcoin-us-open-round56 --cache .cache/binance-altcoin-us-open-round52 --workers 32
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-us-open-round56-results
+          path: artifacts/altcoin-us-open-round56
+          if-no-files-found: warn
+          retention-days: 7
