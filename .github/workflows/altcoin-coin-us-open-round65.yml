@@ -1,0 +1,55 @@
+name: Coin-specific US-open round 65
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-round65-coin-us-open/**"
+      - ".github/workflows/altcoin-coin-us-open-round65.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+      - name: Restore verified Binance archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-us-open-round52
+          key: altcoin-us-open-round52-15m-2024-2026-v1
+          restore-keys: |
+            altcoin-us-open-round52-
+      - name: Compile and run coin-specific US-open research
+        run: |
+          python -m py_compile research/altcoin-us-open-round52/*.py research/altcoin-round65-coin-us-open/run.py
+          rm -rf artifacts/altcoin-round65-coin-us-open
+          mkdir -p artifacts/altcoin-round65-coin-us-open
+          python research/altcoin-round65-coin-us-open/run.py \
+            --output artifacts/altcoin-round65-coin-us-open \
+            --cache .cache/binance-altcoin-us-open-round52 \
+            --workers 24
+          cp research/altcoin-round65-coin-us-open/run.py artifacts/altcoin-round65-coin-us-open/
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round65-coin-us-open-results
+          path: artifacts/altcoin-round65-coin-us-open
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
