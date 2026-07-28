@@ -5,17 +5,21 @@ on:
     branches:
       - agent/consensus-wif-dot-platform
     paths:
-      - .github/consensus-patch.b64
+      - .github/consensus-patch/**
       - .github/workflows/apply-consensus-platform.yml
   pull_request:
     branches:
       - main
     paths:
-      - .github/consensus-patch.b64
+      - .github/consensus-patch/**
       - .github/workflows/apply-consensus-platform.yml
 
 permissions:
   contents: write
+
+concurrency:
+  group: consensus-platform-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   apply:
@@ -42,8 +46,12 @@ jobs:
           import io
           import tarfile
 
-          payload = Path('.github/consensus-patch.b64').read_text().strip()
-          archive = base64.b64decode(payload)
+          parts = sorted(Path('.github/consensus-patch').glob('part-*'))
+          if len(parts) != 7:
+              raise SystemExit(f'expected 7 payload chunks, found {len(parts)}')
+
+          payload = ''.join(part.read_text().strip() for part in parts)
+          archive = base64.b64decode(payload, validate=True)
           expected = '14014e51eb91dbeabf1fb40d6a891d8fdd130131c1f4b15a32ef21372c8ae106'
           actual = hashlib.sha256(archive).hexdigest()
           if actual != expected:
@@ -60,6 +68,7 @@ jobs:
 
           rm -f "apps/lean/Binance SMA Strategy/main.py"
           rm -f "apps/lean/Binance SMA Strategy/config.json"
+          rm -rf .github/consensus-patch
           rm -f .github/consensus-patch.b64
           rm -f .github/workflows/apply-consensus-platform.yml
 
