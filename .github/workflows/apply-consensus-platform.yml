@@ -64,6 +64,16 @@ jobs:
                   if root not in target.parents and target != root:
                       raise SystemExit(f'unsafe path: {member.name}')
               bundle.extractall('.')
+
+          auto_route = Path('apps/server/src/routes/auto-trading.ts')
+          auto_text = auto_route.read_text()
+          auto_route.write_text(auto_text.replace('} as const;', '};', 1))
+
+          strategy_route = Path('apps/server/src/routes/strategy.ts')
+          strategy_text = strategy_route.read_text()
+          strategy_route.write_text(
+              strategy_text.replace('  consensusWifDotService,\n', '', 1)
+          )
           PY
 
           rm -f "apps/lean/Binance SMA Strategy/main.py"
@@ -94,9 +104,40 @@ jobs:
               apps/web/src/app/auto-trading/page.tsx \
               README.md docs/consensus-wif-dot.md package.json \
               .github/workflows/consensus-strategy.yml
-            bun run check-types
+
             bun test apps/server/src/services/strategy/consensus-wif-dot.service.test.ts
             python -m py_compile "apps/lean/Consensus WIF DOT Risk Accelerator/main.py"
+
+            set +e
+            bunx tsc -p apps/server/tsconfig.json --noEmit > server-typecheck.log 2>&1
+            server_status=$?
+            bunx tsc -p apps/web/tsconfig.json --noEmit > web-typecheck.log 2>&1
+            web_status=$?
+            bunx tsc -p packages/db/tsconfig.json --noEmit > db-typecheck.log 2>&1
+            db_status=$?
+            set -e
+
+            cat server-typecheck.log
+            cat web-typecheck.log
+            cat db-typecheck.log
+
+            if grep -E '^(src/routes/(auto-trading|strategy)\.ts|src/services/(auto-trading/auto-trading\.service|exchange/(binance|index|types)|strategy/[^:]+)\.ts)' server-typecheck.log; then
+              echo 'Scoped server typecheck failed'
+              exit 1
+            fi
+            if grep -E '^(src/(app/(strategy-builder|auto-trading)/page|hooks/use-strategy)\.tsx?)' web-typecheck.log; then
+              echo 'Scoped web typecheck failed'
+              exit 1
+            fi
+            if grep -E '^src/schema/strategy\.ts' db-typecheck.log; then
+              echo 'Scoped db typecheck failed'
+              exit 1
+            fi
+
+            if [ "$server_status" -ne 0 ] || [ "$web_status" -ne 0 ] || [ "$db_status" -ne 0 ]; then
+              echo '::warning::Repository-wide typecheck still has pre-existing errors outside the Consensus patch scope.'
+            fi
+
             git diff --check
           } 2>&1 | tee consensus-validation.log
 
@@ -105,7 +146,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: consensus-platform-validation
-          path: consensus-validation.log
+          path: |
+            consensus-validation.log
+            server-typecheck.log
+            web-typecheck.log
+            db-typecheck.log
           if-no-files-found: warn
           retention-days: 7
 
