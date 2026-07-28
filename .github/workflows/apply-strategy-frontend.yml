@@ -54,8 +54,8 @@ jobs:
           import tarfile
 
           parts = sorted(Path('.github/frontend-rewrite').glob('part-*'))
-          if len(parts) != 5:
-              raise SystemExit(f'expected 5 payload chunks, found {len(parts)}')
+          if len(parts) != 6:
+              raise SystemExit(f'expected 6 payload chunks, found {len(parts)}')
 
           payload = ''.join(part.read_text().strip() for part in parts)
           archive = base64.b64decode(payload, validate=True)
