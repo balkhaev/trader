@@ -85,9 +85,7 @@ jobs:
 
           rm -f "apps/lean/Binance SMA Strategy/main.py"
           rm -f "apps/lean/Binance SMA Strategy/config.json"
-          rm -rf .github/consensus-patch
           rm -f .github/consensus-patch.b64
-          rm -f .github/workflows/apply-consensus-platform.yml
 
       - name: Install and validate
         id: validate
@@ -169,8 +167,10 @@ jobs:
       - name: Publish implementation commit
         if: steps.validate.outcome == 'success'
         run: |
+          rm -f .github/workflows/consensus-strategy.yml
           git config user.name "openai-agent"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
+          git reset .github/consensus-patch .github/workflows/apply-consensus-platform.yml
           git commit -m "Implement Consensus WIF DOT trading platform"
           git push origin HEAD:agent/consensus-wif-dot-platform
