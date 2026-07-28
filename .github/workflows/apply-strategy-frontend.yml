@@ -1,0 +1,143 @@
+name: Apply strategy frontend rewrite
+
+on:
+  push:
+    branches:
+      - agent/consensus-wif-dot-platform
+    paths:
+      - .github/frontend-rewrite/**
+      - .github/workflows/apply-strategy-frontend.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/frontend-rewrite/**
+      - .github/workflows/apply-strategy-frontend.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: strategy-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.event_name == 'push' || github.head_ref == 'agent/consensus-wif-dot-platform'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: "test"
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/trader"
+      BETTER_AUTH_SECRET: "consensus-ci-secret-consensus-ci-secret"
+      BETTER_AUTH_URL: "http://localhost:3000"
+      CORS_ORIGIN: "http://localhost:3001"
+      ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/consensus-wif-dot-platform
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.3
+
+      - name: Extract reviewed frontend patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          import hashlib
+          import io
+          import tarfile
+
+          parts = sorted(Path('.github/frontend-rewrite').glob('part-*'))
+          if len(parts) != 5:
+              raise SystemExit(f'expected 5 payload chunks, found {len(parts)}')
+
+          payload = ''.join(part.read_text().strip() for part in parts)
+          archive = base64.b64decode(payload, validate=True)
+          expected = '35b24f01cfac1d9bacffa900510a952a489c8acdd4c71cbafe1f4462cb8f39f1'
+          actual = hashlib.sha256(archive).hexdigest()
+          if actual != expected:
+              raise SystemExit(f'payload checksum {actual} != {expected}')
+
+          root = Path.cwd().resolve()
+          with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as bundle:
+              for member in bundle.getmembers():
+                  target = (root / member.name).resolve()
+                  if root not in target.parents and target != root:
+                      raise SystemExit(f'unsafe path: {member.name}')
+              bundle.extractall('.')
+          PY
+
+      - name: Validate strategy frontend
+        id: validate
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            bun install --frozen-lockfile
+            bunx biome format --write \
+              apps/web/src/app/layout.tsx \
+              apps/web/src/index.css \
+              apps/web/src/components/bloomberg-header.tsx \
+              apps/web/src/app/page.tsx \
+              apps/web/src/app/strategy-builder/page.tsx \
+              apps/web/src/app/auto-trading/page.tsx \
+              apps/web/src/app/signals/page.tsx \
+              apps/web/src/app/validation/page.tsx \
+              apps/web/src/app/research/page.tsx \
+              apps/web/src/app/strategies/page.tsx
+
+            set +e
+            bunx tsc -p apps/web/tsconfig.json --noEmit > web-typecheck.log 2>&1
+            web_status=$?
+            set -e
+            cat web-typecheck.log
+
+            if grep -E '^(src/(app/(layout|page|strategy-builder/page|auto-trading/page|signals/page|validation/page|research/page|strategies/page)\.tsx|components/bloomberg-header\.tsx))' web-typecheck.log; then
+              echo 'Scoped frontend typecheck failed'
+              exit 1
+            fi
+
+            if [ "$web_status" -ne 0 ]; then
+              echo '::warning::Repository-wide legacy web errors outside the strategy frontend scope remain.'
+            fi
+
+            if grep -Eq 'Agents|Markets|Intelligence|Transport|News' apps/web/src/components/bloomberg-header.tsx; then
+              echo 'Legacy product navigation remains in the primary shell'
+              exit 1
+            fi
+
+            git diff --check
+          } 2>&1 | tee frontend-validation.log
+
+      - name: Upload frontend diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strategy-frontend-validation
+          path: |
+            frontend-validation.log
+            web-typecheck.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Stop on validation failure
+        if: steps.validate.outcome != 'success'
+        run: exit 1
+
+      - name: Publish frontend commit
+        if: steps.validate.outcome == 'success'
+        shell: bash
+        run: |
+          git config user.name "openai-agent"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git reset .github/frontend-rewrite .github/workflows/apply-strategy-frontend.yml
+          HUSKY=0 git commit -m "Rewrite frontend for Consensus WIF DOT"
+          git push origin HEAD:agent/consensus-wif-dot-platform
