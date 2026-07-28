@@ -1,0 +1,53 @@
+name: Spot perpetual basis round 48
+
+on:
+  pull_request:
+    paths:
+      - "research/spot-perp-basis-round48/**"
+      - ".github/workflows/spot-perp-basis-round48.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1"
+      - name: Restore verified spot and futures cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-basis-round48
+          key: basis-round48-spot-usdm-2024-2026h1-v1
+      - name: Compile and run spot-perpetual basis research
+        run: |
+          python -m py_compile research/spot-perp-basis-round48/run.py
+          rm -rf artifacts/spot-perp-basis-round48
+          mkdir -p artifacts/spot-perp-basis-round48
+          python research/spot-perp-basis-round48/run.py \
+            --output artifacts/spot-perp-basis-round48 \
+            --cache .cache/binance-basis-round48 \
+            --workers 32
+          cp research/spot-perp-basis-round48/run.py artifacts/spot-perp-basis-round48/
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spot-perp-basis-round48-results
+          path: artifacts/spot-perp-basis-round48
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
