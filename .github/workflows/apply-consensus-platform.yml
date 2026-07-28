@@ -111,6 +111,7 @@ jobs:
               apps/web/src/app/auto-trading/page.tsx \
               README.md docs/consensus-wif-dot.md package.json \
               .github/workflows/consensus-strategy.yml
+            sed -i 's/[[:space:]]\+$//' README.md docs/consensus-wif-dot.md
 
             bun test apps/server/src/services/strategy/consensus-wif-dot.service.test.ts
             python -m py_compile "apps/lean/Consensus WIF DOT Risk Accelerator/main.py"
