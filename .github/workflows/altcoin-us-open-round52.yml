@@ -1,0 +1,53 @@
+name: Altcoin US open round 52
+
+on:
+  pull_request:
+    paths:
+      - "research/altcoin-us-open-round52/**"
+      - ".github/workflows/altcoin-us-open-round52.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONUNBUFFERED: "1"
+      PANDAS_COPY_ON_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "requests>=2.32,<3" "tabulate>=0.9,<1" "tzdata>=2025.2"
+      - name: Restore verified archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-us-open-round52
+          key: us-open-round52-usdm-2024-2026h1-v1
+      - name: Compile and run US-open cross-sectional research
+        run: |
+          python -m py_compile research/altcoin-us-open-round52/run.py
+          rm -rf artifacts/altcoin-us-open-round52
+          mkdir -p artifacts/altcoin-us-open-round52
+          python research/altcoin-us-open-round52/run.py \
+            --output artifacts/altcoin-us-open-round52 \
+            --cache .cache/binance-us-open-round52 \
+            --workers 32
+          cp research/altcoin-us-open-round52/run.py artifacts/altcoin-us-open-round52/
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-us-open-round52-results
+          path: artifacts/altcoin-us-open-round52
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
