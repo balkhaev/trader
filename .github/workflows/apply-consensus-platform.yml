@@ -73,28 +73,48 @@ jobs:
           rm -f .github/workflows/apply-consensus-platform.yml
 
       - name: Install and validate
+        id: validate
+        continue-on-error: true
+        shell: bash
         run: |
-          bun install --frozen-lockfile
-          bunx biome check --write \
-            packages/db/src/schema/strategy.ts \
-            apps/server/src/routes/strategy.ts \
-            apps/server/src/routes/auto-trading.ts \
-            apps/server/src/services/strategy \
-            apps/server/src/services/exchange/binance.ts \
-            apps/server/src/services/exchange/index.ts \
-            apps/server/src/services/exchange/types.ts \
-            apps/server/src/services/auto-trading/auto-trading.service.ts \
-            apps/web/src/hooks/use-strategy.ts \
-            apps/web/src/app/strategy-builder/page.tsx \
-            apps/web/src/app/auto-trading/page.tsx \
-            README.md docs/consensus-wif-dot.md package.json \
-            .github/workflows/consensus-strategy.yml
-          bun run check-types
-          bun test apps/server/src/services/strategy/consensus-wif-dot.service.test.ts
-          python -m py_compile "apps/lean/Consensus WIF DOT Risk Accelerator/main.py"
-          git diff --check
+          set -o pipefail
+          {
+            bun install --frozen-lockfile
+            bunx biome check --write \
+              packages/db/src/schema/strategy.ts \
+              apps/server/src/routes/strategy.ts \
+              apps/server/src/routes/auto-trading.ts \
+              apps/server/src/services/strategy \
+              apps/server/src/services/exchange/binance.ts \
+              apps/server/src/services/exchange/index.ts \
+              apps/server/src/services/exchange/types.ts \
+              apps/server/src/services/auto-trading/auto-trading.service.ts \
+              apps/web/src/hooks/use-strategy.ts \
+              apps/web/src/app/strategy-builder/page.tsx \
+              apps/web/src/app/auto-trading/page.tsx \
+              README.md docs/consensus-wif-dot.md package.json \
+              .github/workflows/consensus-strategy.yml
+            bun run check-types
+            bun test apps/server/src/services/strategy/consensus-wif-dot.service.test.ts
+            python -m py_compile "apps/lean/Consensus WIF DOT Risk Accelerator/main.py"
+            git diff --check
+          } 2>&1 | tee consensus-validation.log
+
+      - name: Upload validation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: consensus-platform-validation
+          path: consensus-validation.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Stop on validation failure
+        if: steps.validate.outcome != 'success'
+        run: exit 1
 
       - name: Publish implementation commit
+        if: steps.validate.outcome == 'success'
         run: |
           git config user.name "openai-agent"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
