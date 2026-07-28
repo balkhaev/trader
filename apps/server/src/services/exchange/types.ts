@@ -56,11 +56,27 @@ export interface Trade {
   executedAt: Date;
 }
 
+export interface Income {
+  symbol: string;
+  incomeType: string;
+  income: string;
+  asset: string;
+  time: number;
+  transactionId?: string;
+}
+
 export interface AccountInfo {
   totalBalance: string;
   availableBalance: string;
   unrealizedPnl: string;
   marginUsed?: string;
+  canTrade?: boolean;
+}
+
+export interface ExchangePreflight {
+  canTrade: boolean;
+  oneWayMode: boolean;
+  messages: string[];
 }
 
 export interface ExchangeCredentials {
@@ -81,4 +97,13 @@ export interface ExchangeService {
   getTradeHistory(symbol?: string, limit?: number): Promise<Trade[]>;
   getPrice(symbol: string): Promise<string>;
   getPrices(symbols: string[]): Promise<Record<string, string>>;
+  getPreflight?(): Promise<ExchangePreflight>;
+  prepareSymbol?(symbol: string, leverage: number): Promise<void>;
+  cancelAllOrders?(symbol: string): Promise<void>;
+  getIncomeHistory?(
+    symbol: string,
+    startTime: number,
+    endTime?: number,
+    limit?: number
+  ): Promise<Income[]>;
 }

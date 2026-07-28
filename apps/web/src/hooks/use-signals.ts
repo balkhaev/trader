@@ -4,46 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
-// === POLYMARKET CONTEXT TYPES ===
-
-export interface PolymarketEventContext {
-  title: string;
-  probability: number;
-  change24h: number;
-}
-
-export interface PolymarketValidation {
-  isAligned: boolean;
-  divergenceLevel: "none" | "minor" | "significant" | "major";
-  divergenceExplanation?: string;
-}
-
-export interface ConfidenceAdjustment {
-  originalConfidence: number;
-  adjustedConfidence: number;
-  adjustmentReason: string;
-}
-
-export interface SmartMoneySignal {
-  sentiment: "bullish" | "bearish" | "neutral";
-  reasoning: string;
-}
-
-export interface PolymarketContextInSignal {
-  events: PolymarketEventContext[];
-  alignment: number;
-  validation: PolymarketValidation;
-}
-
-export interface SignalMetadata {
+export interface SignalMetadata extends Record<string, unknown> {
   reasoning?: string;
   rejectionReason?: string;
   executionOrder?: unknown;
-  // Polymarket enhanced fields
-  polymarketContext?: PolymarketContextInSignal;
-  originalStrength?: number;
-  confidenceAdjustment?: ConfidenceAdjustment;
-  smartMoneySignal?: SmartMoneySignal;
+  strategyKind?: string;
 }
 
 export interface Signal {
@@ -52,18 +17,27 @@ export interface Signal {
   source: string;
   symbol: string;
   side: "long" | "short";
-  strength: string;
+  strength: string | null;
   status: "pending" | "executed" | "rejected" | "expired";
   metadata: SignalMetadata | null;
   createdAt: string;
-  executedAt?: string;
-  // Performance tracking fields
+  executedAt?: string | null;
   entryPrice?: string | null;
   exitPrice?: string | null;
   exitAt?: string | null;
   realizedPnl?: string | null;
   holdingPeriodMinutes?: string | null;
   isWin?: boolean | null;
+}
+
+export interface NewsAnalysis {
+  id: string;
+  sentiment: string;
+  keyPoints?: string[];
+}
+
+export interface SignalWithAnalyses extends Signal {
+  analyses: NewsAnalysis[];
 }
 
 export interface PerformanceStats {
@@ -73,79 +47,42 @@ export interface PerformanceStats {
   winRate: number;
   avgReturn: number;
   totalReturn: number;
-  bestTrade: {
-    id: string;
-    symbol: string;
-    side: string;
-    pnl: number;
-  } | null;
-  worstTrade: {
-    id: string;
-    symbol: string;
-    side: string;
-    pnl: number;
-  } | null;
+  bestTrade: { id: string; symbol: string; side: string; pnl: number } | null;
+  worstTrade: { id: string; symbol: string; side: string; pnl: number } | null;
   avgHoldingPeriodMinutes: number;
   sharpeRatio: number | null;
 }
 
-export interface NewsAnalysis {
-  id: string;
-  sentiment: string;
-  sentimentScore: string;
-  impactScore: string;
-  relevanceScore: string;
-  keyPoints: string[];
-  marketImplications: string;
-  recommendation: {
-    action: string;
-    symbols: string[];
-    reasoning: string;
-    confidence: number;
-    risks: string[];
-  };
-}
-
-export interface SignalWithAnalyses extends Signal {
-  analyses: NewsAnalysis[];
-}
-
-async function fetchWithAuth<T>(
-  endpoint: string,
-  options?: RequestInit
-): Promise<T> {
+async function fetchWithAuth<T>(endpoint: string, options?: RequestInit) {
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers: { "Content-Type": "application/json", ...options?.headers },
   });
-
   if (!response.ok) {
     const error = await response
       .json()
       .catch(() => ({ error: "Request failed" }));
     throw new Error(error.error || "Request failed");
   }
-
-  return response.json();
+  return response.json() as Promise<T>;
 }
 
 export function useSignals(params?: {
   status?: Signal["status"];
   limit?: number;
+  offset?: number;
 }) {
-  const searchParams = new URLSearchParams();
-  if (params?.status) searchParams.set("status", params.status);
-  if (params?.limit) searchParams.set("limit", params.limit.toString());
-
-  const query = searchParams.toString();
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (params?.limit) search.set("limit", String(params.limit));
+  if (params?.offset) search.set("offset", String(params.offset));
+  const query = search.toString();
   return useQuery({
     queryKey: ["signals", params],
     queryFn: () =>
       fetchWithAuth<Signal[]>(`/api/signals${query ? `?${query}` : ""}`),
+    refetchInterval: 30_000,
   });
 }
 
@@ -162,7 +99,7 @@ export function useSignal(signalId: string | null) {
     queryKey: ["signals", signalId],
     queryFn: () =>
       fetchWithAuth<SignalWithAnalyses>(`/api/signals/${signalId}`),
-    enabled: !!signalId,
+    enabled: Boolean(signalId),
   });
 }
 
@@ -181,11 +118,36 @@ export function useSignalStats() {
   });
 }
 
-export function useApproveSignal() {
-  const queryClient = useQueryClient();
+export function usePerformanceStats() {
+  return useQuery({
+    queryKey: ["signals", "performance"],
+    queryFn: () =>
+      fetchWithAuth<PerformanceStats>("/api/signals/performance"),
+  });
+}
 
+export function useClosedSignals(params?: { limit?: number; offset?: number }) {
+  const search = new URLSearchParams();
+  if (params?.limit) search.set("limit", String(params.limit));
+  if (params?.offset) search.set("offset", String(params.offset));
+  const query = search.toString();
+  return useQuery({
+    queryKey: ["signals", "closed", params],
+    queryFn: () =>
+      fetchWithAuth<Signal[]>(
+        `/api/signals/closed${query ? `?${query}` : ""}`
+      ),
+    refetchInterval: 30_000,
+  });
+}
+
+const disabled = (message: string) => {
+  throw new Error(message);
+};
+
+export function useApproveSignal() {
   return useMutation({
-    mutationFn: (params: {
+    mutationFn: async (_params: {
       signalId: string;
       exchangeAccountId: string;
       quantity: string;
@@ -193,94 +155,29 @@ export function useApproveSignal() {
       price?: string;
       stopLoss?: string;
       takeProfit?: string;
-    }) =>
-      fetchWithAuth(`/api/signals/${params.signalId}/approve`, {
-        method: "POST",
-        body: JSON.stringify({
-          exchangeAccountId: params.exchangeAccountId,
-          quantity: params.quantity,
-          orderType: params.orderType,
-          price: params.price,
-          stopLoss: params.stopLoss,
-          takeProfit: params.takeProfit,
-        }),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["signals"] });
-      queryClient.invalidateQueries({ queryKey: ["exchange"] });
-    },
+    }) => disabled("Manual approval is disabled; use Consensus Execution"),
   });
 }
 
 export function useRejectSignal() {
-  const queryClient = useQueryClient();
-
+  const client = useQueryClient();
   return useMutation({
-    mutationFn: (params: { signalId: string; reason?: string }) =>
-      fetchWithAuth(`/api/signals/${params.signalId}/reject`, {
-        method: "POST",
-        body: JSON.stringify({ reason: params.reason }),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["signals"] });
-    },
-  });
-}
-
-// === PERFORMANCE TRACKING ===
-
-export function usePerformanceStats() {
-  return useQuery({
-    queryKey: ["signals", "performance"],
-    queryFn: () => fetchWithAuth<PerformanceStats>("/api/signals/performance"),
-  });
-}
-
-export function useClosedSignals(params?: { limit?: number; offset?: number }) {
-  const searchParams = new URLSearchParams();
-  if (params?.limit) searchParams.set("limit", params.limit.toString());
-  if (params?.offset) searchParams.set("offset", params.offset.toString());
-
-  const query = searchParams.toString();
-  return useQuery({
-    queryKey: ["signals", "closed", params],
-    queryFn: () =>
-      fetchWithAuth<Signal[]>(`/api/signals/closed${query ? `?${query}` : ""}`),
+    mutationFn: async (_params: { signalId: string; reason?: string }) =>
+      disabled("Manual rejection is disabled for deterministic signals"),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["signals"] }),
   });
 }
 
 export function useCloseSignal() {
-  const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (params: { signalId: string; exitPrice: string }) =>
-      fetchWithAuth<{ success: boolean; signal: Signal }>(
-        `/api/signals/${params.signalId}/close`,
-        {
-          method: "POST",
-          body: JSON.stringify({ exitPrice: params.exitPrice }),
-        }
-      ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["signals"] });
-    },
+    mutationFn: async (_params: { signalId: string; exitPrice: string }) =>
+      disabled("Use Emergency Stop or the strategy time exit"),
   });
 }
 
 export function useUpdateEntryPrice() {
-  const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (params: { signalId: string; entryPrice: string }) =>
-      fetchWithAuth<{ success: boolean; signal: Signal }>(
-        `/api/signals/${params.signalId}/entry-price`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ entryPrice: params.entryPrice }),
-        }
-      ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["signals"] });
-    },
+    mutationFn: async (_params: { signalId: string; entryPrice: string }) =>
+      disabled("Entry price is reconciled from Binance execution"),
   });
 }

@@ -11,7 +11,7 @@ async function getUser(c: { req: { raw: Request } }) {
   return session?.user;
 }
 
-const DEFAULT_CONFIG = {
+const EMPTY_CONFIG = {
   enabled: false,
   exchangeAccountId: null,
   minSignalStrength: "0",
@@ -33,22 +33,31 @@ const DEFAULT_CONFIG = {
   useTakeProfit: true,
 };
 
+const numericString = (minimum: number, maximum: number) =>
+  z
+    .string()
+    .refine((value) => {
+      const number = Number(value);
+      return Number.isFinite(number) && number >= minimum && number <= maximum;
+    }, `Value must be between ${minimum} and ${maximum}`);
+
+const updateConfigSchema = z.object({
+  exchangeAccountId: z.string().uuid().nullable().optional(),
+  maxPositionSize: numericString(0, 10_000_000).optional(),
+  maxDailyTrades: numericString(1, 20).optional(),
+  maxOpenPositions: z.enum(["1", "2"]).optional(),
+});
+
 autoTrading.get("/config", async (c) => {
   const user = await getUser(c);
   if (!user) return c.json({ error: "Unauthorized" }, 401);
-  return c.json(
-    (await autoTradingService.getConfig(user.id)) ?? DEFAULT_CONFIG
-  );
+  return c.json((await autoTradingService.getConfig(user.id)) ?? EMPTY_CONFIG);
 });
 
-const updateConfigSchema = z.object({
-  enabled: z.boolean().optional(),
-  exchangeAccountId: z.string().nullable().optional(),
-  maxPositionSize: z.string().optional(),
-  maxDailyTrades: z.string().optional(),
-  maxOpenPositions: z.string().optional(),
-  maxDailyLossPercent: z.string().optional(),
-  orderType: z.enum(["market", "limit"]).optional(),
+autoTrading.get("/preflight", async (c) => {
+  const user = await getUser(c);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  return c.json(await autoTradingService.getPreflight(user.id));
 });
 
 autoTrading.put(
@@ -57,10 +66,10 @@ autoTrading.put(
   async (c) => {
     const user = await getUser(c);
     if (!user) return c.json({ error: "Unauthorized" }, 401);
-    const config = await autoTradingService.upsertConfig(user.id, {
-      ...DEFAULT_CONFIG,
-      ...c.req.valid("json"),
-    });
+    const config = await autoTradingService.upsertConfig(
+      user.id,
+      c.req.valid("json")
+    );
     return c.json({ success: true, config });
   }
 );
@@ -69,17 +78,43 @@ autoTrading.post("/toggle", async (c) => {
   const user = await getUser(c);
   if (!user) return c.json({ error: "Unauthorized" }, 401);
   const current = await autoTradingService.getConfig(user.id);
+  const enabling = !(current?.enabled ?? false);
+  if (enabling) {
+    const preflight = await autoTradingService.getPreflight(user.id);
+    if (!preflight.ready) {
+      return c.json({ error: "Execution preflight failed", preflight }, 400);
+    }
+  }
   const updated = await autoTradingService.upsertConfig(user.id, {
-    ...DEFAULT_CONFIG,
-    enabled: !(current?.enabled ?? false),
-    exchangeAccountId: current?.exchangeAccountId ?? null,
+    enabled: enabling,
   });
   return c.json({ success: true, enabled: updated.enabled });
 });
 
+autoTrading.post("/emergency-stop", async (c) => {
+  const user = await getUser(c);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  try {
+    return c.json({
+      success: true,
+      ...(await autoTradingService.emergencyStop(user.id)),
+    });
+  } catch (error) {
+    return c.json(
+      {
+        error: error instanceof Error ? error.message : "Emergency stop failed",
+      },
+      400
+    );
+  }
+});
+
 autoTrading.get(
   "/logs",
-  zValidator("query", z.object({ limit: z.coerce.number().optional() })),
+  zValidator(
+    "query",
+    z.object({ limit: z.coerce.number().int().min(1).max(100).optional() })
+  ),
   async (c) => {
     const user = await getUser(c);
     if (!user) return c.json({ error: "Unauthorized" }, 401);

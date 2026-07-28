@@ -1,51 +1,44 @@
 "use client";
 
 import {
-  BarChart3,
   CheckCircle2,
   CircleDashed,
   FlaskConical,
+  PlayCircle,
   ShieldCheck,
-  Target,
-  TriangleAlert,
-  XCircle,
 } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { PageLayout, PageLoading, StatItem, StatRow } from "@/components/layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TerminalPanel } from "@/components/ui/terminal-panel";
 import { type Signal, useClosedSignals } from "@/hooks/use-signals";
-import { useCanonicalStrategy } from "@/hooks/use-strategy";
+import {
+  useCanonicalStrategy,
+  useStartForwardValidation,
+} from "@/hooks/use-strategy";
 
 interface StrategyMetadata {
   strategyKind?: string;
   strategySignal?: {
-    module?: "wif_oi_flush" | "dot_funding_rebound";
+    module?: "wif_oi_flush" | "dot_negative_funding";
   };
+  pnlSource?: "income" | "price";
 }
 
-function strategyMetadata(signal: Signal) {
+function metadata(signal: Signal) {
   return (signal.metadata ?? {}) as StrategyMetadata;
 }
 
-function isStrategySignal(signal: Signal) {
-  const meta = strategyMetadata(signal);
-  return (
-    meta.strategyKind === "consensus_wif_dot_v1" ||
-    signal.symbol === "WIFUSDT" ||
-    signal.symbol === "DOTUSDT"
-  );
-}
-
-function GateRow({
+function Gate({
   passed,
-  title,
+  label,
   current,
   target,
 }: {
   passed: boolean;
-  title: string;
+  label: string;
   current: string;
   target: string;
 }) {
@@ -57,7 +50,7 @@ function GateRow({
         <CircleDashed className="size-4 text-muted-foreground" />
       )}
       <div>
-        <p className="text-sm">{title}</p>
+        <p className="text-sm">{label}</p>
         <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
           CURRENT {current}
         </p>
@@ -68,10 +61,11 @@ function GateRow({
 }
 
 export default function ForwardValidationPage() {
-  const canonical = useCanonicalStrategy();
-  const { data: closedSignals, isLoading } = useClosedSignals({ limit: 300 });
+  const strategy = useCanonicalStrategy();
+  const closed = useClosedSignals({ limit: 500 });
+  const start = useStartForwardValidation();
 
-  if (canonical.isLoading || isLoading || !canonical.data) {
+  if (strategy.isLoading || closed.isLoading || !strategy.data) {
     return (
       <PageLayout title="Forward Validation">
         <PageLoading count={8} variant="cards" />
@@ -79,219 +73,155 @@ export default function ForwardValidationPage() {
     );
   }
 
-  const strategy = canonical.data;
-  const closed = (closedSignals ?? []).filter(isStrategySignal);
-  const wifTrades = closed.filter(
-    (signal) => strategyMetadata(signal).strategySignal?.module === "wif_oi_flush"
+  const startedAt = strategy.data.config.validation?.startedAt;
+  const startedMs = startedAt ? new Date(startedAt).getTime() : Number.POSITIVE_INFINITY;
+  const trades = (closed.data ?? []).filter((item) => {
+    const info = metadata(item);
+    return (
+      info.strategyKind === "consensus_wif_dot_v1" &&
+      new Date(item.createdAt).getTime() >= startedMs
+    );
+  });
+  const wif = trades.filter(
+    (item) => metadata(item).strategySignal?.module === "wif_oi_flush"
   );
-  const dotTrades = closed.filter(
-    (signal) =>
-      strategyMetadata(signal).strategySignal?.module === "dot_funding_rebound"
+  const dot = trades.filter(
+    (item) => metadata(item).strategySignal?.module === "dot_negative_funding"
   );
-  const returns = closed
-    .map((signal) => Number(signal.realizedPnl ?? 0))
-    .filter(Number.isFinite);
-  const winners = returns.filter((value) => value > 0);
-  const losers = returns.filter((value) => value < 0);
-  const grossWin = winners.reduce((sum, value) => sum + value, 0);
-  const grossLoss = Math.abs(losers.reduce((sum, value) => sum + value, 0));
-  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : winners.length ? Infinity : 0;
-  const totalReturn = returns.reduce((sum, value) => sum + value, 0);
-  const sortedReturns = [...returns].sort((a, b) => b - a);
-  const withoutTopThree = sortedReturns.slice(3).reduce((sum, value) => sum + value, 0);
-  const runtimeDrawdown = (() => {
-    const runtime = strategy.config.runtime;
-    if (!runtime || runtime.highWaterEquity <= 0) return 0;
-    return Math.max(0, (1 - runtime.equity / runtime.highWaterEquity) * 100);
-  })();
-
+  const returns = trades.map((item) => Number(item.realizedPnl ?? 0));
+  const gains = returns.filter((value) => value > 0).reduce((a, b) => a + b, 0);
+  const losses = Math.abs(
+    returns.filter((value) => value < 0).reduce((a, b) => a + b, 0)
+  );
+  const profitFactor = losses > 0 ? gains / losses : gains > 0 ? Infinity : 0;
+  const withoutBestThree = [...returns]
+    .sort((a, b) => b - a)
+    .slice(3)
+    .reduce((a, b) => a + b, 0);
+  const runtime = strategy.data.config.runtime;
+  const drawdown =
+    runtime && runtime.highWaterEquity > 0
+      ? Math.max(0, (1 - runtime.equity / runtime.highWaterEquity) * 100)
+      : 0;
+  const reconciled = trades.filter(
+    (item) => metadata(item).pnlSource === "income"
+  ).length;
   const gates = {
-    trades: closed.length >= 30,
-    modules: wifTrades.length > 0 && dotTrades.length > 0,
-    pf: profitFactor >= 1.35,
-    removeBest: closed.length >= 4 && withoutTopThree > 0,
-    drawdown: runtimeDrawdown < 12,
-    strategyActive: strategy.isActive,
+    epoch: Boolean(startedAt),
+    trades: trades.length >= 30,
+    modules: wif.length > 0 && dot.length > 0,
+    profitFactor: profitFactor >= 1.35,
+    removeBest: trades.length >= 4 && withoutBestThree > 0,
+    drawdown: drawdown < 12,
+    reconciliation: trades.length > 0 && reconciled === trades.length,
   };
-  const passedCount = Object.values(gates).filter(Boolean).length;
-  const allPassed = Object.values(gates).every(Boolean);
+  const passed = Object.values(gates).every(Boolean);
+
+  const startNew = () => {
+    if (
+      !confirm(
+        "Начать новый forward epoch? Execution должен быть выключен, позиции закрыты, runtime будет сброшен в BASE."
+      )
+    ) {
+      return;
+    }
+    start.mutate(undefined, {
+      onSuccess: () => toast.success("New forward epoch started"),
+      onError: (error) => toast.error(error.message),
+    });
+  };
 
   return (
     <PageLayout
       actions={
         <div className="flex gap-2">
           <Link href="/signals">
-            <Button size="sm" variant="outline">
-              Сигналы
-            </Button>
+            <Button size="sm" variant="outline">Сигналы</Button>
           </Link>
-          <Link href="/strategy-builder">
-            <Button size="sm">Strategy blueprint</Button>
-          </Link>
+          <Button disabled={start.isPending} onClick={startNew} size="sm">
+            <PlayCircle className="mr-1 size-4" />
+            {startedAt ? "Restart forward" : "Start forward"}
+          </Button>
         </div>
       }
-      subtitle="Live/testnet-доказательство перед повышением риска и включением scheduler"
+      subtitle="Gate считает только сделки после явного запуска нового epoch"
       title="Forward Validation Gate"
     >
       <section
         className={`overflow-hidden rounded-2xl border ${
-          allPassed ? "border-primary/30 bg-primary/5" : "border-yellow-500/25 bg-card/70"
+          passed ? "border-primary/30 bg-primary/5" : "border-yellow-500/25 bg-card/70"
         }`}
       >
-        <div className="grid gap-0 lg:grid-cols-[1.25fr_0.75fr]">
+        <div className="grid lg:grid-cols-[1.25fr_0.75fr]">
           <div className="p-5 sm:p-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={allPassed ? "default" : "secondary"}>
-                {allPassed ? "FORWARD PASSED" : "RESEARCH / TESTNET"}
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={passed ? "default" : "secondary"}>
+                {passed ? "FORWARD PASSED" : "FORWARD LOCKED"}
               </Badge>
-              <Badge variant="outline">{passedCount}/6 gates</Badge>
-              <Badge variant="outline">NEW FILLS ONLY</Badge>
+              <Badge variant="outline">
+                {Object.values(gates).filter(Boolean).length}/7 gates
+              </Badge>
+              <Badge variant="outline">NEW EPOCH ONLY</Badge>
             </div>
-            <h2 className="mt-4 font-semibold text-2xl tracking-tight">
-              Исторические 100% не включают boost автоматически.
+            <h2 className="mt-4 font-semibold text-2xl">
+              Исторические и старые DB-сделки больше не могут открыть boost.
             </h2>
-            <p className="mt-2 max-w-3xl text-muted-foreground text-sm leading-6">
-              Переход к базовому accelerator и затем к boost разрешается только после
-              новой серии исполнений с измеренными комиссиями, проскальзыванием и
-              сохранением edge отдельно у WIF и DOT.
+            <p className="mt-2 text-muted-foreground text-sm leading-6">
+              Epoch стартует только при выключенном execution и нулевых позициях.
+              Одновременно закрытая equity сбрасывается в BASE относительно текущего
+              Binance balance.
             </p>
           </div>
-          <div className="border-border/70 border-t bg-background/45 p-5 lg:border-t-0 lg:border-l sm:p-6">
-            <div className="text-[10px] text-muted-foreground uppercase tracking-widest">
-              Forward state
+          <div className="border-border/70 border-t bg-background/45 p-5 lg:border-t-0 lg:border-l">
+            <div className="text-[10px] text-muted-foreground uppercase">Epoch</div>
+            <div className="mt-2 font-mono text-lg">
+              {startedAt ? new Date(startedAt).toLocaleString("ru-RU") : "NOT STARTED"}
             </div>
-            <div className="mt-2 font-mono text-3xl">
-              {allPassed ? "PASS" : "LOCKED"}
-            </div>
-            <div className="mt-2 text-muted-foreground text-xs">
-              Boost remains {allPassed ? "eligible" : "disabled by evidence gate"}
-            </div>
+            <div className="mt-4 font-mono text-3xl">{passed ? "PASS" : "LOCKED"}</div>
           </div>
         </div>
       </section>
 
       <StatRow className="mt-4 md:grid-cols-5">
-        <StatItem label="New closed trades" value={closed.length} />
-        <StatItem label="WIF / DOT" value={`${wifTrades.length} / ${dotTrades.length}`} />
+        <StatItem label="Closed" value={trades.length} />
+        <StatItem label="WIF / DOT" value={`${wif.length} / ${dot.length}`} />
         <StatItem label="Profit factor" value={Number.isFinite(profitFactor) ? profitFactor.toFixed(2) : "∞"} />
-        <StatItem label="Closed return" value={`${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`} />
-        <StatItem label="Runtime DD" value={`${runtimeDrawdown.toFixed(2)}%`} />
+        <StatItem label="Reconciled" value={`${reconciled}/${trades.length}`} />
+        <StatItem label="Runtime DD" value={`${drawdown.toFixed(2)}%`} />
       </StatRow>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <TerminalPanel subtitle="Все условия обязательны" title="Forward gates">
+      <div className="mt-4 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <TerminalPanel title="Evidence gates">
           <div className="p-4">
-            <GateRow
-              current={`${closed.length} trades`}
-              passed={gates.trades}
-              target="≥ 30"
-              title="Достаточная новая выборка"
-            />
-            <GateRow
-              current={`WIF ${wifTrades.length} / DOT ${dotTrades.length}`}
-              passed={gates.modules}
-              target="BOTH > 0"
-              title="Оба модуля реально исполнялись"
-            />
-            <GateRow
-              current={Number.isFinite(profitFactor) ? profitFactor.toFixed(2) : "∞"}
-              passed={gates.pf}
-              target="PF ≥ 1.35"
-              title="Общий Profit Factor"
-            />
-            <GateRow
-              current={`${withoutTopThree >= 0 ? "+" : ""}${withoutTopThree.toFixed(2)}%`}
-              passed={gates.removeBest}
-              target="> 0"
-              title="Результат без трёх лучших"
-            />
-            <GateRow
-              current={`${runtimeDrawdown.toFixed(2)}%`}
-              passed={gates.drawdown}
-              target="< 12%"
-              title="Просадка закрытой equity"
-            />
-            <GateRow
-              current={strategy.isActive ? "active" : "paused"}
-              passed={gates.strategyActive}
-              target="ACTIVE"
-              title="Canonical strategy status"
-            />
+            <Gate passed={gates.epoch} label="Explicit forward epoch" current={startedAt ? "started" : "missing"} target="REQUIRED" />
+            <Gate passed={gates.trades} label="New closed sample" current={`${trades.length}`} target="≥ 30" />
+            <Gate passed={gates.modules} label="Both modules" current={`WIF ${wif.length} / DOT ${dot.length}`} target="BOTH > 0" />
+            <Gate passed={gates.profitFactor} label="Profit Factor" current={Number.isFinite(profitFactor) ? profitFactor.toFixed(2) : "∞"} target="≥ 1.35" />
+            <Gate passed={gates.removeBest} label="Without best three" current={`${withoutBestThree >= 0 ? "+" : ""}${withoutBestThree.toFixed(2)}%`} target="> 0" />
+            <Gate passed={gates.drawdown} label="Closed-equity drawdown" current={`${drawdown.toFixed(2)}%`} target="< 12%" />
+            <Gate passed={gates.reconciliation} label="Exchange income reconciliation" current={`${reconciled}/${trades.length}`} target="100%" />
           </div>
         </TerminalPanel>
 
-        <div className="space-y-4">
-          <TerminalPanel subtitle="Post-selection research snapshot" title="Historical evidence">
-            <div className="grid gap-3 p-4 sm:grid-cols-2">
-              <div className="rounded-xl border bg-background/40 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <BarChart3 className="size-4 text-primary" />
-                    <span className="font-medium text-sm">Consensus late year</span>
-                  </div>
-                  <Badge variant="outline">29 trades</Badge>
-                </div>
-                <div className="mt-4 font-mono text-3xl">+55.4%</div>
-                <p className="mt-1 text-muted-foreground text-xs">
-                  Balanced: WIF 3% / DOT 5% / gross 3×
-                </p>
-              </div>
-              <div className="rounded-xl border bg-background/40 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Target className="size-4 text-yellow-500" />
-                    <span className="font-medium text-sm">Risk Accelerator</span>
-                  </div>
-                  <Badge variant="outline">research</Badge>
-                </div>
-                <div className="mt-4 font-mono text-3xl">+100.0%</div>
-                <p className="mt-1 text-muted-foreground text-xs">
-                  Fixed late-year upper bound, closed DD 8.34%
-                </p>
-              </div>
-              <div className="rounded-xl border bg-background/40 p-4 sm:col-span-2">
-                <div className="flex items-start gap-3">
-                  <FlaskConical className="mt-0.5 size-5 text-primary" />
-                  <div>
-                    <p className="font-medium text-sm">Planning case ≠ historical upside</p>
-                    <p className="mt-1 text-muted-foreground text-xs leading-5">
-                      При сохранении 75% наблюдаемого edge медианный accelerator был
-                      около +37.6%. При сохранении 50% — около +7%. Поэтому 100% остаются
-                      целевым upside, а не базовым обещанием.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </TerminalPanel>
-
-          <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4">
-            <div className="flex items-start gap-3">
-              <TriangleAlert className="mt-0.5 size-5 text-yellow-500" />
-              <div>
-                <p className="font-medium text-sm">Gate использует только новые закрытые сделки</p>
-                <p className="mt-1 text-muted-foreground text-xs leading-5">
-                  Старые backtests не увеличивают progress. Фактические costs должны быть
-                  ≤ 24 bps; этот параметр должен подтверждаться execution журналом перед
-                  production-допуском.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-            <div className="flex items-start gap-3">
+        <TerminalPanel subtitle="Operational interpretation" title="What PASS means">
+          <div className="space-y-4 p-4">
+            <div className="flex gap-3 rounded-xl border bg-background/40 p-4">
               <ShieldCheck className="mt-0.5 size-5 text-primary" />
-              <div>
-                <p className="font-medium text-sm">Текущий разрешённый режим</p>
-                <p className="mt-1 text-muted-foreground text-xs leading-5">
-                  До полного PASS: testnet или отдельный micro sleeve, scheduler выключен,
-                  boost не считается подтверждённым. Hard stop стратегии остаётся sticky.
-                </p>
-              </div>
+              <p className="text-muted-foreground text-xs leading-5">
+                PASS разрешает обсуждать повышение риска, но не включает boost сам.
+                Реальный переход всё равно происходит только после +15% closed-equity
+                high-water по алгоритму Risk Accelerator.
+              </p>
+            </div>
+            <div className="flex gap-3 rounded-xl border bg-background/40 p-4">
+              <FlaskConical className="mt-0.5 size-5 text-yellow-500" />
+              <p className="text-muted-foreground text-xs leading-5">
+                P&L должен быть reconciled через Binance income history, включая
+                realized PnL, commission и funding. Price fallback не проходит gate.
+              </p>
             </div>
           </div>
-        </div>
+        </TerminalPanel>
       </div>
     </PageLayout>
   );

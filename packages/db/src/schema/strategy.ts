@@ -14,12 +14,12 @@ export type StrategyRiskMode = "base" | "boost" | "stopped";
 
 export interface StrategyExecutionConfig {
   venue: "binance_usdm";
-  orderType: "market" | "limit";
+  orderType: "market";
   roundTurnCostBps: number;
-  maxPositions: number;
+  maxPositions: 2;
   maxGrossLeverage: number;
-  skipOvernight: boolean;
-  skipFundingCrossing: boolean;
+  skipOvernight: true;
+  skipFundingCrossing: true;
 }
 
 export interface WifOiFlushConfig {
@@ -77,6 +77,9 @@ export interface StrategyConfig {
   dot: DotFundingConfig;
   risk: RiskAcceleratorConfig;
   runtime?: StrategyRuntimeState;
+  validation?: {
+    startedAt: string;
+  };
 }
 
 export const DEFAULT_CONSENSUS_STRATEGY_CONFIG: StrategyConfig = {
@@ -97,7 +100,6 @@ export const DEFAULT_CONSENSUS_STRATEGY_CONFIG: StrategyConfig = {
   wif: {
     enabled: true,
     symbol: "WIFUSDT",
-    // Monday = 0. Consensus route: Tuesday, Friday, Sunday.
     allowedWeekdaysUtc: [1, 4, 6],
     move45mAtrMax: -2,
     volumeZMin: 1,
@@ -114,7 +116,6 @@ export const DEFAULT_CONSENSUS_STRATEGY_CONFIG: StrategyConfig = {
     enabled: true,
     symbol: "DOTUSDT",
     entryDelayMinutes: 15,
-    // Monday/Tuesday <= -2.25 bps; Friday/Saturday/Sunday <= -2.50 bps.
     weekdayFundingThresholdBps: {
       0: -2.25,
       1: -2.25,

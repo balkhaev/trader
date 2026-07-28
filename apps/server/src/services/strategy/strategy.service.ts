@@ -6,13 +6,47 @@ import {
   type StrategyRuntimeState,
 } from "@trader/db";
 import type { InferSelectModel } from "drizzle-orm";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { generateConsensusLeanCode } from "./lean-code";
 
 export type StrategyRecord = InferSelectModel<typeof strategy>;
 
+const consensusKind = sql`${strategy.config}->>'kind' = 'consensus_wif_dot_v1'`;
+
 function cloneConfig(config: StrategyConfig): StrategyConfig {
   return structuredClone(config);
+}
+
+function validateConfig(config: StrategyConfig): StrategyConfig {
+  for (const [name, value] of Object.entries(config.risk)) {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`risk.${name} must be a positive finite number`);
+    }
+  }
+  if (config.risk.boostWifRiskPercent < config.risk.baseWifRiskPercent) {
+    throw new Error("WIF boost risk cannot be below base risk");
+  }
+  if (config.risk.boostDotRiskPercent < config.risk.baseDotRiskPercent) {
+    throw new Error("DOT boost risk cannot be below base risk");
+  }
+  if (
+    config.risk.deRiskDrawdownPercent >= config.risk.hardStopDrawdownPercent
+  ) {
+    throw new Error("De-risk drawdown must be below hard-stop drawdown");
+  }
+  if (
+    config.execution.maxGrossLeverage <= 0 ||
+    config.execution.maxGrossLeverage > 5
+  ) {
+    throw new Error("Gross leverage must be in (0, 5]");
+  }
+  if (
+    config.execution.roundTurnCostBps < 0 ||
+    config.execution.roundTurnCostBps > 100
+  ) {
+    throw new Error("Round-turn cost reserve must be between 0 and 100 bps");
+  }
+  return config;
 }
 
 function mergeConfig(
@@ -22,37 +56,75 @@ function mergeConfig(
   if (updates.kind && updates.kind !== "consensus_wif_dot_v1") {
     throw new Error("Only consensus_wif_dot_v1 is supported");
   }
-
-  return {
-    ...existing,
-    ...updates,
-    kind: "consensus_wif_dot_v1",
-    execution: { ...existing.execution, ...updates.execution },
-    wif: { ...existing.wif, ...updates.wif },
-    dot: {
-      ...existing.dot,
-      ...updates.dot,
-      weekdayFundingThresholdBps: {
-        ...existing.dot.weekdayFundingThresholdBps,
-        ...updates.dot?.weekdayFundingThresholdBps,
-      },
+  const defaults = DEFAULT_CONSENSUS_STRATEGY_CONFIG;
+  return validateConfig({
+    ...defaults,
+    name: updates.name ?? existing.name ?? defaults.name,
+    description:
+      updates.description ?? existing.description ?? defaults.description,
+    execution: {
+      ...defaults.execution,
+      roundTurnCostBps:
+        updates.execution?.roundTurnCostBps ??
+        existing.execution.roundTurnCostBps,
+      maxGrossLeverage:
+        updates.execution?.maxGrossLeverage ??
+        existing.execution.maxGrossLeverage,
     },
-    risk: { ...existing.risk, ...updates.risk },
-    runtime: updates.runtime ?? existing.runtime,
+    wif: {
+      ...defaults.wif,
+      enabled: updates.wif?.enabled ?? existing.wif.enabled,
+    },
+    dot: {
+      ...defaults.dot,
+      enabled: updates.dot?.enabled ?? existing.dot.enabled,
+    },
+    risk: {
+      ...existing.risk,
+      ...updates.risk,
+    },
+    runtime: existing.runtime,
+    validation: existing.validation,
+  });
+}
+
+function runtime(
+  equity: number
+): Omit<StrategyRuntimeState, "updatedAt"> {
+  return {
+    mode: "base",
+    initialEquity: equity,
+    equity,
+    highWaterEquity: equity,
+    lastDeriskHighWaterEquity: equity,
   };
 }
 
 function runtimeToConfig(
   config: StrategyConfig,
-  runtime: Omit<StrategyRuntimeState, "updatedAt"> | StrategyRuntimeState
+  state: Omit<StrategyRuntimeState, "updatedAt"> | StrategyRuntimeState
 ): StrategyConfig {
   return {
     ...config,
     runtime: {
-      ...runtime,
+      ...state,
       updatedAt: new Date().toISOString(),
     },
   };
+}
+
+async function ownedCanonical(strategyId: string, userId: string) {
+  const [found] = await db
+    .select()
+    .from(strategy)
+    .where(
+      and(
+        eq(strategy.id, strategyId),
+        eq(strategy.userId, userId),
+        consensusKind
+      )
+    );
+  return found ?? null;
 }
 
 export const strategyService = {
@@ -60,13 +132,8 @@ export const strategyService = {
     return cloneConfig(DEFAULT_CONSENSUS_STRATEGY_CONFIG);
   },
 
-  async create(
-    userId: string,
-    config: StrategyConfig
-  ): Promise<StrategyRecord> {
+  async create(userId: string, config: StrategyConfig): Promise<StrategyRecord> {
     const normalized = mergeConfig(this.getDefaultConfig(), config);
-    const leanCode = generateConsensusLeanCode(normalized);
-
     const [created] = await db
       .insert(strategy)
       .values({
@@ -74,18 +141,19 @@ export const strategyService = {
         name: normalized.name,
         description: normalized.description,
         config: normalized,
-        leanCode,
+        leanCode: generateConsensusLeanCode(normalized),
       })
       .returning();
-
     return created!;
   },
 
   async ensureCanonical(userId: string): Promise<StrategyRecord> {
-    const strategies = await this.getByUser(userId);
-    const existing = strategies.find(
-      (item) => item.config.kind === "consensus_wif_dot_v1"
-    );
+    const [existing] = await db
+      .select()
+      .from(strategy)
+      .where(and(eq(strategy.userId, userId), consensusKind))
+      .orderBy(desc(strategy.updatedAt))
+      .limit(1);
     if (existing) return existing;
     return this.create(userId, this.getDefaultConfig());
   },
@@ -95,13 +163,8 @@ export const strategyService = {
     userId: string,
     updates: Partial<StrategyConfig>
   ): Promise<StrategyRecord> {
-    const [existing] = await db
-      .select()
-      .from(strategy)
-      .where(and(eq(strategy.id, strategyId), eq(strategy.userId, userId)));
-
-    if (!existing) throw new Error("Strategy not found");
-
+    const existing = await ownedCanonical(strategyId, userId);
+    if (!existing) throw new Error("Canonical strategy not found");
     const newConfig = mergeConfig(existing.config, updates);
     const [updated] = await db
       .update(strategy)
@@ -113,43 +176,64 @@ export const strategyService = {
       })
       .where(eq(strategy.id, strategyId))
       .returning();
-
     return updated!;
   },
 
   async persistRuntime(
     strategyId: string,
     userId: string,
-    runtime: Omit<StrategyRuntimeState, "updatedAt"> | StrategyRuntimeState
+    state: Omit<StrategyRuntimeState, "updatedAt"> | StrategyRuntimeState
   ): Promise<StrategyRecord> {
-    const [existing] = await db
-      .select()
-      .from(strategy)
-      .where(and(eq(strategy.id, strategyId), eq(strategy.userId, userId)));
-
-    if (!existing) throw new Error("Strategy not found");
-
-    const config = runtimeToConfig(existing.config, runtime);
+    const existing = await ownedCanonical(strategyId, userId);
+    if (!existing) throw new Error("Canonical strategy not found");
     const [updated] = await db
       .update(strategy)
-      .set({ config })
+      .set({ config: runtimeToConfig(existing.config, state) })
       .where(eq(strategy.id, strategyId))
       .returning();
-
     return updated!;
   },
 
-  async delete(strategyId: string, userId: string): Promise<void> {
-    await db
-      .delete(strategy)
-      .where(and(eq(strategy.id, strategyId), eq(strategy.userId, userId)));
+  async resetRuntime(
+    strategyId: string,
+    userId: string,
+    equity: number
+  ): Promise<StrategyRecord> {
+    if (!Number.isFinite(equity) || equity <= 0) {
+      throw new Error("A positive account equity is required");
+    }
+    return this.persistRuntime(strategyId, userId, runtime(equity));
+  },
+
+  async startForwardValidation(
+    strategyId: string,
+    userId: string,
+    equity: number
+  ): Promise<StrategyRecord> {
+    if (!Number.isFinite(equity) || equity <= 0) {
+      throw new Error("A positive account equity is required");
+    }
+    const existing = await ownedCanonical(strategyId, userId);
+    if (!existing) throw new Error("Canonical strategy not found");
+    const startedAt = new Date().toISOString();
+    const [updated] = await db
+      .update(strategy)
+      .set({
+        config: {
+          ...runtimeToConfig(existing.config, runtime(equity)),
+          validation: { startedAt },
+        },
+      })
+      .where(eq(strategy.id, strategyId))
+      .returning();
+    return updated!;
   },
 
   async getById(strategyId: string): Promise<StrategyRecord | null> {
     const [found] = await db
       .select()
       .from(strategy)
-      .where(eq(strategy.id, strategyId));
+      .where(and(eq(strategy.id, strategyId), consensusKind));
     return found ?? null;
   },
 
@@ -157,7 +241,7 @@ export const strategyService = {
     return db
       .select()
       .from(strategy)
-      .where(eq(strategy.userId, userId))
+      .where(and(eq(strategy.userId, userId), consensusKind))
       .orderBy(desc(strategy.updatedAt));
   },
 
@@ -165,7 +249,13 @@ export const strategyService = {
     const [found] = await db
       .select()
       .from(strategy)
-      .where(and(eq(strategy.userId, userId), eq(strategy.isActive, true)))
+      .where(
+        and(
+          eq(strategy.userId, userId),
+          eq(strategy.isActive, true),
+          consensusKind
+        )
+      )
       .orderBy(desc(strategy.updatedAt))
       .limit(1);
     return found ?? null;
@@ -175,26 +265,13 @@ export const strategyService = {
     return db
       .select()
       .from(strategy)
-      .where(eq(strategy.isActive, true))
+      .where(and(eq(strategy.isActive, true), consensusKind))
       .orderBy(desc(strategy.updatedAt));
   },
 
-  async getPublic(limit = 20): Promise<StrategyRecord[]> {
-    return db
-      .select()
-      .from(strategy)
-      .where(eq(strategy.isPublic, true))
-      .orderBy(desc(strategy.createdAt))
-      .limit(limit);
-  },
-
   async toggleActive(strategyId: string, userId: string): Promise<boolean> {
-    const [existing] = await db
-      .select()
-      .from(strategy)
-      .where(and(eq(strategy.id, strategyId), eq(strategy.userId, userId)));
-    if (!existing) throw new Error("Strategy not found");
-
+    const existing = await ownedCanonical(strategyId, userId);
+    if (!existing) throw new Error("Canonical strategy not found");
     const newActive = !existing.isActive;
     if (newActive) {
       await db

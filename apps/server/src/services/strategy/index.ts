@@ -10,9 +10,5 @@ export {
   type WifEvaluationInput,
 } from "./consensus-wif-dot.service";
 export { strategyRunnerService } from "./strategy-runner.service";
+export { strategyScheduler } from "./strategy.scheduler";
 export { strategyService, type StrategyRecord } from "./strategy.service";
-
-import { strategyScheduler } from "./strategy.scheduler";
-
-strategyScheduler.start();
-export { strategyScheduler };

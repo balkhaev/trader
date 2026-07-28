@@ -13,7 +13,9 @@ interface ScanOptions {
   now?: number;
 }
 
-function stateFromRecord(
+const activeScans = new Set<string>();
+
+function stateFromRuntime(
   runtime:
     | {
         mode: "base" | "boost" | "stopped";
@@ -30,115 +32,156 @@ function stateFromRecord(
     : consensusWifDotService.createInitialRiskState(equity);
 }
 
-async function hasDedupeKey(
-  userId: string,
-  dedupeKey: string
-): Promise<boolean> {
+async function findByDedupeKey(userId: string, dedupeKey: string) {
   const recent = await db
-    .select({ metadata: signal.metadata })
+    .select()
     .from(signal)
-    .where(and(eq(signal.userId, userId), eq(signal.source, "webhook")))
+    .where(eq(signal.userId, userId))
     .orderBy(desc(signal.createdAt))
-    .limit(200);
-  return recent.some(
-    (row) =>
-      (row.metadata as { dedupeKey?: string } | null)?.dedupeKey === dedupeKey
+    .limit(500);
+  return (
+    recent.find(
+      (row) =>
+        (row.metadata as { dedupeKey?: string } | null)?.dedupeKey === dedupeKey
+    ) ?? null
   );
 }
 
-export const strategyRunnerService = {
-  async scanUser(userId: string, options: ScanOptions = {}) {
-    const strategyRecord = await strategyService.getActiveByUser(userId);
-    if (!strategyRecord) {
-      return { scanned: false, reason: "No active strategy", signals: [] };
-    }
+async function scanUserUnlocked(userId: string, options: ScanOptions) {
+  const strategyRecord = await strategyService.getActiveByUser(userId);
+  if (!strategyRecord) {
+    return { scanned: false, reason: "No active canonical strategy", signals: [] };
+  }
 
+  let context = await autoTradingService
+    .getExecutionContext(userId)
+    .catch(() => null);
+  if (context) {
     await autoTradingService
-      .closeExpiredStrategySignals(userId)
+      .closeExpiredStrategySignals(userId, context)
       .catch(() => undefined);
-    const [market, context] = await Promise.all([
-      consensusMarketService.scan(options.now),
-      autoTradingService.getExecutionContext(userId),
-    ]);
-    const initialState = stateFromRecord(
-      strategyRecord.config.runtime,
-      context.equity
-    );
-    const evaluation = consensusWifDotService.evaluate({
-      config: strategyRecord.config,
-      state: initialState,
-      equity: context.equity,
-      openGrossNotional: context.openGrossNotional,
-      wif: market.wif,
-      dot: market.dot,
-    });
-    await strategyService.persistRuntime(
-      strategyRecord.id,
-      userId,
-      evaluation.state
-    );
+    context = await autoTradingService
+      .getExecutionContext(userId)
+      .catch(() => null);
+  }
 
-    const created: Array<{
-      id: string;
-      module: string;
-      symbol: string;
-      executed: boolean;
-      executionReason?: string;
-    }> = [];
+  const market = await consensusMarketService.scan(options.now);
+  const runtime = strategyRecord.config.runtime;
+  const fallbackEquity = runtime?.equity ?? runtime?.initialEquity ?? 10_000;
+  const equity = context?.equity ?? fallbackEquity;
+  const openGrossNotional = context?.openGrossNotional ?? 0;
+  const evaluation = consensusWifDotService.evaluate({
+    config: strategyRecord.config,
+    state: stateFromRuntime(runtime, equity),
+    equity,
+    openGrossNotional,
+    wif: market.wif,
+    dot: market.dot,
+  });
+  await strategyService.persistRuntime(
+    strategyRecord.id,
+    userId,
+    evaluation.state
+  );
 
-    for (const candidate of evaluation.signals) {
-      const dedupeKey = `${candidate.signal.module}:${candidate.signal.signalTime}`;
-      if (await hasDedupeKey(userId, dedupeKey)) continue;
+  const results: Array<{
+    id: string;
+    module: string;
+    symbol: string;
+    executed: boolean;
+    executionReason?: string;
+  }> = [];
 
-      const [createdSignal] = await db
-        .insert(signal)
-        .values({
-          userId,
-          source: "webhook",
-          symbol: candidate.signal.symbol,
-          side: candidate.signal.side,
-          strength: String(candidate.signal.strength),
-          status: "pending",
-          metadata: {
-            strategyKind: strategyRecord.config.kind,
-            strategyId: strategyRecord.id,
-            dedupeKey,
-            reasoning: candidate.signal.reason,
-            strategySignal: candidate.signal,
-            positionPreview: candidate.position,
-            marketDiagnostics: market.diagnostics,
-            scannedAt: market.scannedAt,
-          },
-        })
-        .returning();
-
-      if (!createdSignal) continue;
+  for (const candidate of evaluation.signals) {
+    const dedupeKey = `${candidate.signal.module}:${candidate.signal.signalTime}`;
+    const existing = await findByDedupeKey(userId, dedupeKey);
+    if (existing) {
       let executed = false;
-      let executionReason: string | undefined;
-      if (options.execute ?? true) {
-        const result = await autoTradingService.executeAutoTrade(
+      let executionReason = "Signal already recorded";
+      if ((options.execute ?? false) && existing.status === "pending") {
+        const execution = await autoTradingService.executeAutoTrade(
           userId,
-          createdSignal
+          existing
         );
-        executed = result.executed;
-        executionReason = result.reason;
+        executed = execution.executed;
+        executionReason = execution.reason;
       }
-      created.push({
-        id: createdSignal.id,
+      results.push({
+        id: existing.id,
         module: candidate.signal.module,
         symbol: candidate.signal.symbol,
         executed,
         executionReason,
       });
+      continue;
     }
 
-    return {
-      scanned: true,
-      strategyId: strategyRecord.id,
-      riskState: evaluation.state,
-      market,
-      signals: created,
-      nextScanAt: consensusMarketService.getExpectedNextScan(options.now),
-    };
+    const [createdSignal] = await db
+      .insert(signal)
+      .values({
+        userId,
+        source: "webhook",
+        symbol: candidate.signal.symbol,
+        side: candidate.signal.side,
+        strength: String(candidate.signal.strength),
+        status: "pending",
+        metadata: {
+          strategyKind: strategyRecord.config.kind,
+          strategyId: strategyRecord.id,
+          dedupeKey,
+          reasoning: candidate.signal.reason,
+          strategySignal: candidate.signal,
+          positionPreview: candidate.position,
+          marketDiagnostics: market.diagnostics,
+          scannedAt: market.scannedAt,
+        },
+      })
+      .returning();
+
+    if (!createdSignal) continue;
+    let executed = false;
+    let executionReason: string | undefined;
+    if (options.execute ?? false) {
+      const execution = await autoTradingService.executeAutoTrade(
+        userId,
+        createdSignal
+      );
+      executed = execution.executed;
+      executionReason = execution.reason;
+    }
+    results.push({
+      id: createdSignal.id,
+      module: candidate.signal.module,
+      symbol: candidate.signal.symbol,
+      executed,
+      executionReason,
+    });
+  }
+
+  return {
+    scanned: true,
+    strategyId: strategyRecord.id,
+    riskState: evaluation.state,
+    market,
+    signals: results,
+    nextScanAt: consensusMarketService.getExpectedNextScan(options.now),
+  };
+}
+
+export const strategyRunnerService = {
+  async scanUser(userId: string, options: ScanOptions = {}) {
+    if (activeScans.has(userId)) {
+      return {
+        scanned: false,
+        reason: "A strategy scan is already in progress",
+        signals: [],
+      };
+    }
+    activeScans.add(userId);
+    try {
+      return await scanUserUnlocked(userId, options);
+    } finally {
+      activeScans.delete(userId);
+    }
   },
 };

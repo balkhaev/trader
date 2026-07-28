@@ -3,7 +3,9 @@ import type {
   AccountInfo,
   Balance,
   ExchangeCredentials,
+  ExchangePreflight,
   ExchangeService,
+  Income,
   Order,
   OrderParams,
   Position,
@@ -87,13 +89,11 @@ export class BinanceExchangeService implements ExchangeService {
       payload.timestamp = String(Date.now());
     }
     const query = new URLSearchParams(payload).toString();
-    const signature = signed ? `&signature=${this.sign(query)}` : "";
-    const encoded = `${query}${signature}`;
+    const encoded = signed ? `${query}&signature=${this.sign(query)}` : query;
     const url =
-      method === "GET" || method === "DELETE"
-        ? `${this.baseUrl}${endpoint}${encoded ? `?${encoded}` : ""}`
-        : `${this.baseUrl}${endpoint}`;
-
+      method === "POST"
+        ? `${this.baseUrl}${endpoint}`
+        : `${this.baseUrl}${endpoint}${encoded ? `?${encoded}` : ""}`;
     const response = await fetch(url, {
       method,
       headers: {
@@ -127,24 +127,30 @@ export class BinanceExchangeService implements ExchangeService {
     return this.exchangeInfoCache;
   }
 
+  private async symbolInfo(symbol: string): Promise<BinanceSymbolInfo> {
+    const info = await this.getExchangeInfo();
+    const found = info.symbols.find((item) => item.symbol === symbol);
+    if (!found) throw new Error(`Binance symbol ${symbol} is unavailable`);
+    return found;
+  }
+
   private async normalizeQuantity(
     symbol: string,
     quantity: string
   ): Promise<string> {
-    const info = await this.getExchangeInfo();
-    const symbolInfo = info.symbols.find((item) => item.symbol === symbol);
+    const info = await this.symbolInfo(symbol);
     const filter =
-      symbolInfo?.filters.find(
-        (item) => item.filterType === "MARKET_LOT_SIZE"
-      ) ?? symbolInfo?.filters.find((item) => item.filterType === "LOT_SIZE");
-    const stepSize = Number(filter?.stepSize ?? "0.000001");
+      info.filters.find((item) => item.filterType === "MARKET_LOT_SIZE") ??
+      info.filters.find((item) => item.filterType === "LOT_SIZE");
+    const rawStep = filter?.stepSize ?? "0.000001";
+    const stepSize = Number(rawStep);
     const minQty = Number(filter?.minQty ?? "0");
     const normalized = floorToStep(
       Number(quantity),
       stepSize,
-      decimalPlaces(filter?.stepSize ?? "0.000001")
+      decimalPlaces(rawStep)
     );
-    if (Number(normalized) < minQty || Number(normalized) <= 0) {
+    if (!Number.isFinite(Number(normalized)) || Number(normalized) < minQty) {
       throw new Error(
         `${symbol} quantity ${normalized} is below minimum ${minQty}`
       );
@@ -153,21 +159,20 @@ export class BinanceExchangeService implements ExchangeService {
   }
 
   private async normalizePrice(symbol: string, price: string): Promise<string> {
-    const info = await this.getExchangeInfo();
-    const symbolInfo = info.symbols.find((item) => item.symbol === symbol);
-    const filter = symbolInfo?.filters.find(
+    const info = await this.symbolInfo(symbol);
+    const filter = info.filters.find(
       (item) => item.filterType === "PRICE_FILTER"
     );
-    const tickSize = Number(filter?.tickSize ?? "0.000001");
+    const rawTick = filter?.tickSize ?? "0.000001";
     return floorToStep(
       Number(price),
-      tickSize,
-      decimalPlaces(filter?.tickSize ?? "0.000001")
+      Number(rawTick),
+      decimalPlaces(rawTick)
     );
   }
 
   private mapOrder(row: BinanceOrderResponse): Order {
-    const statusMap: Record<string, Order["status"]> = {
+    const statuses: Record<string, Order["status"]> = {
       NEW: "pending",
       PARTIALLY_FILLED: "pending",
       FILLED: "filled",
@@ -180,7 +185,7 @@ export class BinanceExchangeService implements ExchangeService {
       symbol: row.symbol,
       side: row.side.toLowerCase() as "buy" | "sell",
       type: row.type.toLowerCase().includes("limit") ? "limit" : "market",
-      status: statusMap[row.status] ?? "pending",
+      status: statuses[row.status] ?? "pending",
       quantity: row.origQty,
       price: row.price,
       filledQuantity: row.executedQty,
@@ -192,6 +197,7 @@ export class BinanceExchangeService implements ExchangeService {
 
   async getAccountInfo(): Promise<AccountInfo> {
     interface AccountResponse {
+      canTrade?: boolean;
       totalWalletBalance: string;
       availableBalance: string;
       totalUnrealizedProfit: string;
@@ -203,7 +209,35 @@ export class BinanceExchangeService implements ExchangeService {
       availableBalance: account.availableBalance,
       unrealizedPnl: account.totalUnrealizedProfit,
       marginUsed: account.totalInitialMargin,
+      canTrade: account.canTrade,
     };
+  }
+
+  async getPreflight(): Promise<ExchangePreflight> {
+    const [account, positionMode] = await Promise.all([
+      this.getAccountInfo(),
+      this.request<{ dualSidePosition: boolean }>(
+        "/fapi/v1/positionSide/dual"
+      ),
+    ]);
+    const canTrade = account.canTrade !== false;
+    const oneWayMode = !positionMode.dualSidePosition;
+    const messages: string[] = [];
+    if (!canTrade) messages.push("Binance account trading permission is disabled");
+    if (!oneWayMode) messages.push("Hedge Mode must be disabled (One-way Mode required)");
+    return { canTrade, oneWayMode, messages };
+  }
+
+  async prepareSymbol(symbol: string, leverage: number): Promise<void> {
+    const preflight = await this.getPreflight();
+    if (!preflight.canTrade || !preflight.oneWayMode) {
+      throw new Error(preflight.messages.join("; ") || "Binance preflight failed");
+    }
+    const normalizedLeverage = Math.max(1, Math.min(125, Math.ceil(leverage)));
+    await this.request("/fapi/v1/leverage", "POST", {
+      symbol,
+      leverage: String(normalizedLeverage),
+    });
   }
 
   async getBalances(): Promise<Balance[]> {
@@ -256,7 +290,7 @@ export class BinanceExchangeService implements ExchangeService {
     type: "STOP_MARKET" | "TAKE_PROFIT_MARKET",
     stopPrice: string
   ): Promise<void> {
-    await this.request<BinanceOrderResponse>("/fapi/v1/order", "POST", {
+    await this.request("/fapi/v1/order", "POST", {
       symbol,
       side: side === "buy" ? "BUY" : "SELL",
       type,
@@ -267,11 +301,48 @@ export class BinanceExchangeService implements ExchangeService {
     });
   }
 
+  async cancelAllOrders(symbol: string): Promise<void> {
+    await this.request("/fapi/v1/allOpenOrders", "DELETE", { symbol });
+  }
+
+  private async flattenPosition(
+    symbol: string,
+    fallbackSide: "buy" | "sell",
+    fallbackQuantity: string
+  ): Promise<void> {
+    const position = (await this.getPositions().catch(() => [])).find(
+      (item) => item.symbol === symbol
+    );
+    const side = position
+      ? position.side === "long"
+        ? "SELL"
+        : "BUY"
+      : fallbackSide === "buy"
+        ? "BUY"
+        : "SELL";
+    const quantity = position?.quantity ?? fallbackQuantity;
+    if (Number(quantity) <= 0) return;
+    await this.request("/fapi/v1/order", "POST", {
+      symbol,
+      side,
+      type: "MARKET",
+      quantity: await this.normalizeQuantity(symbol, quantity),
+      reduceOnly: "true",
+      newOrderRespType: "RESULT",
+    });
+  }
+
   async createOrder(params: OrderParams): Promise<Order> {
     const quantity = await this.normalizeQuantity(
       params.symbol,
       params.quantity
     );
+    if (
+      params.type === "limit" &&
+      (params.stopLoss !== undefined || params.takeProfit !== undefined)
+    ) {
+      throw new Error("Protected strategy entries must use market orders");
+    }
     const orderParams: Record<string, string> = {
       symbol: params.symbol,
       side: params.side === "buy" ? "BUY" : "SELL",
@@ -315,13 +386,13 @@ export class BinanceExchangeService implements ExchangeService {
           );
         }
       } catch (error) {
-        await this.request<BinanceOrderResponse>("/fapi/v1/order", "POST", {
-          symbol: params.symbol,
-          side: protectiveSide === "buy" ? "BUY" : "SELL",
-          type: "MARKET",
-          quantity,
-          reduceOnly: "true",
-        }).catch(() => undefined);
+        await this.cancelAllOrders(params.symbol).catch(() => undefined);
+        await this.flattenPosition(
+          params.symbol,
+          protectiveSide,
+          quantity
+        ).catch(() => undefined);
+        await this.cancelAllOrders(params.symbol).catch(() => undefined);
         throw new Error(
           `Protection order failed; position flatten attempted: ${
             error instanceof Error ? error.message : String(error)
@@ -381,6 +452,36 @@ export class BinanceExchangeService implements ExchangeService {
       commission: row.commission,
       commissionAsset: row.commissionAsset,
       executedAt: new Date(row.time),
+    }));
+  }
+
+  async getIncomeHistory(
+    symbol: string,
+    startTime: number,
+    endTime = Date.now(),
+    limit = 1000
+  ): Promise<Income[]> {
+    interface IncomeRow {
+      symbol: string;
+      incomeType: string;
+      income: string;
+      asset: string;
+      time: number;
+      tranId?: number;
+    }
+    const rows = await this.request<IncomeRow[]>("/fapi/v1/income", "GET", {
+      symbol,
+      startTime: String(startTime),
+      endTime: String(endTime),
+      limit: String(Math.min(1000, Math.max(1, limit))),
+    });
+    return rows.map((row) => ({
+      symbol: row.symbol,
+      incomeType: row.incomeType,
+      income: row.income,
+      asset: row.asset,
+      time: row.time,
+      transactionId: row.tranId ? String(row.tranId) : undefined,
     }));
   }
 

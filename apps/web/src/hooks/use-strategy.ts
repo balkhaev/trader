@@ -13,12 +13,12 @@ export interface StrategyConfig {
   timeframe: "15m";
   execution: {
     venue: "binance_usdm";
-    orderType: "market" | "limit";
+    orderType: "market";
     roundTurnCostBps: number;
-    maxPositions: number;
+    maxPositions: 2;
     maxGrossLeverage: number;
-    skipOvernight: boolean;
-    skipFundingCrossing: boolean;
+    skipOvernight: true;
+    skipFundingCrossing: true;
   };
   wif: {
     enabled: boolean;
@@ -61,6 +61,9 @@ export interface StrategyConfig {
     lastDeriskHighWaterEquity: number;
     updatedAt: string;
   };
+  validation?: {
+    startedAt: string;
+  };
 }
 
 export interface Strategy {
@@ -69,19 +72,19 @@ export interface Strategy {
   name: string;
   description: string | null;
   config: StrategyConfig;
-  isPublic: boolean;
   isActive: boolean;
   leanCode: string | null;
-  lastBacktestId: string | null;
-  backtestCount: string;
   createdAt: string;
   updatedAt: string;
 }
 
-async function fetchWithAuth<T>(
-  endpoint: string,
-  options?: RequestInit
-): Promise<T> {
+export interface SchedulerStatus {
+  enabled: boolean;
+  running: boolean;
+  nextRunAt: string | null;
+}
+
+async function fetchWithAuth<T>(endpoint: string, options?: RequestInit) {
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     credentials: "include",
@@ -93,52 +96,37 @@ async function fetchWithAuth<T>(
       .catch(() => ({ error: "Request failed" }));
     throw new Error(error.error || "Request failed");
   }
-  return response.json();
-}
-
-export function useStrategies() {
-  return useQuery({
-    queryKey: ["strategies"],
-    queryFn: () => fetchWithAuth<{ strategies: Strategy[] }>("/api/strategy"),
-  });
+  return response.json() as Promise<T>;
 }
 
 export function useCanonicalStrategy() {
   return useQuery({
-    queryKey: ["strategies", "canonical"],
+    queryKey: ["strategy", "canonical"],
     queryFn: () => fetchWithAuth<Strategy>("/api/strategy/canonical"),
+    refetchInterval: 30_000,
   });
 }
 
 export function useDefaultStrategy() {
   return useQuery({
-    queryKey: ["strategies", "default"],
+    queryKey: ["strategy", "default"],
     queryFn: () =>
       fetchWithAuth<{ config: StrategyConfig }>("/api/strategy/default"),
+    staleTime: Number.POSITIVE_INFINITY,
   });
 }
 
-export function useStrategy(strategyId: string | null) {
+export function useStrategyStatus() {
   return useQuery({
-    queryKey: ["strategies", strategyId],
-    queryFn: () => fetchWithAuth<Strategy>(`/api/strategy/${strategyId}`),
-    enabled: !!strategyId,
-  });
-}
-
-export function useStrategyCode(strategyId: string | null) {
-  return useQuery({
-    queryKey: ["strategies", strategyId, "code"],
+    queryKey: ["strategy", "status"],
     queryFn: () =>
-      fetchWithAuth<{ code: string; name: string; language: string }>(
-        `/api/strategy/${strategyId}/code`
-      ),
-    enabled: !!strategyId,
+      fetchWithAuth<{ scheduler: SchedulerStatus }>("/api/strategy/status"),
+    refetchInterval: 30_000,
   });
 }
 
 export function useUpdateStrategy() {
-  const queryClient = useQueryClient();
+  const client = useQueryClient();
   return useMutation({
     mutationFn: ({
       strategyId,
@@ -152,12 +140,12 @@ export function useUpdateStrategy() {
         { method: "PUT", body: JSON.stringify(config) }
       ),
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["strategies"] }),
+      client.invalidateQueries({ queryKey: ["strategy", "canonical"] }),
   });
 }
 
 export function useToggleStrategy() {
-  const queryClient = useQueryClient();
+  const client = useQueryClient();
   return useMutation({
     mutationFn: (strategyId: string) =>
       fetchWithAuth<{ success: boolean; isActive: boolean }>(
@@ -165,12 +153,12 @@ export function useToggleStrategy() {
         { method: "POST" }
       ),
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["strategies"] }),
+      client.invalidateQueries({ queryKey: ["strategy", "canonical"] }),
   });
 }
 
 export function useScanStrategy() {
-  const queryClient = useQueryClient();
+  const client = useQueryClient();
   return useMutation({
     mutationFn: (execute: boolean) =>
       fetchWithAuth<{
@@ -189,18 +177,31 @@ export function useScanStrategy() {
         body: JSON.stringify({ execute }),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["strategies"] });
-      queryClient.invalidateQueries({ queryKey: ["auto-trading"] });
+      client.invalidateQueries({ queryKey: ["strategy"] });
+      client.invalidateQueries({ queryKey: ["signals"] });
+      client.invalidateQueries({ queryKey: ["auto-trading"] });
     },
   });
 }
 
-export function useGenerateCode() {
+function runtimeMutation(endpoint: string) {
+  const client = useQueryClient();
   return useMutation({
-    mutationFn: (config: StrategyConfig) =>
-      fetchWithAuth<{ code: string; language: string }>(
-        "/api/strategy/generate-code",
-        { method: "POST", body: JSON.stringify(config) }
-      ),
+    mutationFn: () =>
+      fetchWithAuth<{ success: boolean; strategy: Strategy }>(endpoint, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["strategy", "canonical"] });
+      client.invalidateQueries({ queryKey: ["signals"] });
+    },
   });
+}
+
+export function useResetStrategyRuntime() {
+  return runtimeMutation("/api/strategy/runtime/reset");
+}
+
+export function useStartForwardValidation() {
+  return runtimeMutation("/api/strategy/validation/start");
 }

@@ -4,12 +4,13 @@ import { NextResponse } from "next/server";
 const FORWARD_PREFIXES = ["/backtests"];
 
 export function proxy(request: NextRequest) {
-  const destination = FORWARD_PREFIXES.some((prefix) =>
-    request.nextUrl.pathname.startsWith(prefix)
-  )
+  const path = request.nextUrl.pathname;
+  if (path === "/exchanges") return NextResponse.next();
+  const destination = FORWARD_PREFIXES.some((prefix) => path.startsWith(prefix))
     ? "/validation"
-    : "/research";
-
+    : path.startsWith("/exchanges/")
+      ? "/exchanges"
+      : "/research";
   return NextResponse.redirect(new URL(destination, request.url));
 }
 
@@ -27,5 +28,6 @@ export const config = {
     "/backtests/:path*",
     "/data/:path*",
     "/my/:path*",
+    "/exchanges/:path*",
   ],
 };

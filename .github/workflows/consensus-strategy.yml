@@ -3,24 +3,32 @@ name: Consensus strategy checks
 on:
   pull_request:
     paths:
+      - "apps/server/src/index.ts"
+      - "apps/server/src/routes/auto-trading.ts"
+      - "apps/server/src/routes/exchange.ts"
+      - "apps/server/src/routes/signals.ts"
+      - "apps/server/src/routes/strategy.ts"
       - "apps/server/src/services/strategy/**"
       - "apps/server/src/services/exchange/**"
       - "apps/server/src/services/auto-trading/**"
-      - "apps/server/src/routes/strategy.ts"
-      - "apps/server/src/routes/auto-trading.ts"
-      - "apps/web/src/proxy.ts"
       - "apps/web/src/app/layout.tsx"
       - "apps/web/src/app/page.tsx"
       - "apps/web/src/index.css"
+      - "apps/web/src/proxy.ts"
       - "apps/web/src/components/bloomberg-header.tsx"
+      - "apps/web/src/components/dashboard/add-account-dialog.tsx"
       - "apps/web/src/app/strategy-builder/**"
       - "apps/web/src/app/auto-trading/**"
       - "apps/web/src/app/signals/**"
       - "apps/web/src/app/validation/**"
       - "apps/web/src/app/research/**"
       - "apps/web/src/app/strategies/**"
+      - "apps/web/src/app/exchanges/**"
       - "apps/web/src/hooks/use-strategy.ts"
+      - "apps/web/src/hooks/use-auto-trading.ts"
+      - "apps/web/src/hooks/use-signals.ts"
       - "packages/db/src/schema/strategy.ts"
+      - "packages/db/src/schema/auto-trading.ts"
       - "apps/lean/Consensus WIF DOT Risk Accelerator/**"
       - ".github/workflows/consensus-strategy.yml"
   workflow_dispatch:
@@ -43,9 +51,24 @@ jobs:
           bun-version: 1.3.3
       - run: bun install --frozen-lockfile
       - name: Deterministic strategy tests
-        run: bun test apps/server/src/services/strategy/consensus-wif-dot.service.test.ts
+        run: |
+          bun test apps/server/src/services/strategy/consensus-wif-dot.service.test.ts
+          bun test apps/server/src/services/exchange/binance.test.ts
       - name: LEAN syntax check
         run: python -m py_compile "apps/lean/Consensus WIF DOT Risk Accelerator/main.py"
+      - name: Strategy-only runtime invariants
+        shell: bash
+        run: |
+          grep -q 'strategyScheduler.start' apps/server/src/index.ts
+          grep -q 'ALLOW_LIVE_TRADING' apps/server/src/services/auto-trading/auto-trading.service.ts
+          grep -q 'One-way Mode' apps/server/src/services/exchange/binance.ts
+          grep -q 'validation/start' apps/server/src/routes/strategy.ts
+          ! grep -q '/:id/approve' apps/server/src/routes/signals.ts
+          ! grep -q 'polymarket' apps/server/src/index.ts
+          ! grep -q 'newsScheduler' apps/server/src/index.ts
+          ! grep -q '"/accounts/:id/orders"' apps/server/src/routes/exchange.ts
+          ! grep -q 'type: z.enum' apps/server/src/routes/exchange.ts
+          git diff --check
       - name: Scoped TypeScript checks
         shell: bash
         run: |
@@ -59,14 +82,14 @@ jobs:
           cat web-typecheck.log
           cat db-typecheck.log
 
-          if grep -E '^(src/routes/(auto-trading|strategy)\.ts|src/services/(auto-trading/auto-trading\.service|exchange/(binance|index|types)|strategy/[^:]+)\.ts)' server-typecheck.log; then
+          if grep -E '^(src/index\.ts|src/routes/(auto-trading|exchange|signals|strategy)\.ts|src/services/(auto-trading/auto-trading\.service|exchange/(binance|index|types|binance\.test)|strategy/[^:]+)\.ts)' server-typecheck.log; then
             exit 1
           fi
-          if grep -E '^(src/(proxy\.ts|app/(layout|page|strategy-builder/page|auto-trading/page|signals/page|validation/page|research/page|strategies/page)\.tsx|components/bloomberg-header\.tsx))' web-typecheck.log; then
+          if grep -E '^(src/(proxy\.ts|app/(layout|page|strategy-builder/page|auto-trading/page|signals/page|validation/page|research/page|strategies/page|exchanges/page)\.tsx|components/(bloomberg-header|dashboard/add-account-dialog)\.tsx|hooks/(use-strategy|use-auto-trading|use-signals)\.ts))' web-typecheck.log; then
             exit 1
           fi
-          if grep -E '^src/schema/strategy\.ts' db-typecheck.log; then
+          if grep -E '^src/schema/(strategy|auto-trading)\.ts' db-typecheck.log; then
             exit 1
           fi
 
-          echo 'Repository-wide legacy type errors outside the Consensus strategy scope are reported above but do not block this scoped check.'
+          echo 'Legacy files outside the active Consensus runtime may still be reported, but every active backend/frontend path is a blocking check.'
