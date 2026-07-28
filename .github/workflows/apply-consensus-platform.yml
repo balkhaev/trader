@@ -26,6 +26,13 @@ jobs:
     if: github.event_name == 'push' || github.head_ref == 'agent/consensus-wif-dot-platform'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/trader
+      BETTER_AUTH_SECRET: consensus-ci-secret-consensus-ci-secret
+      BETTER_AUTH_URL: http://localhost:3000
+      CORS_ORIGIN: http://localhost:3001
+      ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
     steps:
       - uses: actions/checkout@v4
         with:
