@@ -1,0 +1,40 @@
+name: Altcoin OI wide full history round 55
+on:
+  pull_request:
+    paths:
+      - 'research/altcoin-round55-oi-wide-full/**'
+      - '.github/workflows/altcoin-oi-wide-full-round55.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install 'numpy>=2.0,<3' 'pandas>=2.2,<3' 'requests>=2.32,<3' 'tabulate>=0.9,<1'
+      - name: Restore verified archive cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance-altcoin-round55
+          key: altcoin-round55-usdm-30coins-2024-2026-v1
+      - name: Run research
+        run: |
+          python -m py_compile research/altcoin-round28-confluence/*.py research/altcoin-round55-oi-wide-full/run.py
+          rm -rf artifacts/altcoin-round55-oi-wide-full
+          mkdir -p artifacts/altcoin-round55-oi-wide-full
+          python research/altcoin-round55-oi-wide-full/run.py --output artifacts/altcoin-round55-oi-wide-full --cache .cache/binance-altcoin-round55 --workers 40
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: altcoin-round55-oi-wide-full-results
+          path: artifacts/altcoin-round55-oi-wide-full
+          if-no-files-found: warn
+          retention-days: 7
