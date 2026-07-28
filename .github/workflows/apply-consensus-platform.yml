@@ -7,12 +7,19 @@ on:
     paths:
       - .github/consensus-patch.b64
       - .github/workflows/apply-consensus-platform.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/consensus-patch.b64
+      - .github/workflows/apply-consensus-platform.yml
 
 permissions:
   contents: write
 
 jobs:
   apply:
+    if: github.event_name == 'push' || github.head_ref == 'agent/consensus-wif-dot-platform'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -42,10 +49,11 @@ jobs:
           if actual != expected:
               raise SystemExit(f'payload checksum {actual} != {expected}')
 
+          root = Path.cwd().resolve()
           with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as bundle:
               for member in bundle.getmembers():
-                  target = (Path.cwd() / member.name).resolve()
-                  if Path.cwd().resolve() not in target.parents and target != Path.cwd().resolve():
+                  target = (root / member.name).resolve()
+                  if root not in target.parents and target != root:
                       raise SystemExit(f'unsafe path: {member.name}')
               bundle.extractall('.')
           PY
