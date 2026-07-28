@@ -32,6 +32,68 @@ jobs:
         with:
           path: .cache/binance-coinm-liquidation-round49
           key: coinm-liquidation-round49-2024h2-2026h1-v1
+      - name: Patch liquidation snapshot schema detection
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('research/coinm-liquidation-round49/run.py')
+          text = path.read_text()
+          start = text.index('def read_liquidation(path: Path) -> pd.DataFrame:\n')
+          end = text.index('\n\ndef load_symbol(', start)
+          replacement = '''def read_liquidation(path: Path) -> pd.DataFrame:
+              raw = first_member(path)
+              if not raw:
+                  return pd.DataFrame(columns=["time", "side", "quantity", "price"])
+              first = pd.read_csv(io.BytesIO(raw), low_memory=False)
+              mapping = {norm(column): column for column in first.columns}
+              time_col = next((mapping[key] for key in ("time", "tradetime", "updatetime", "eventtime") if key in mapping), None)
+              side_col = next((mapping[key] for key in ("side",) if key in mapping), None)
+              qty_col = next((mapping[key] for key in ("executedquantity", "executedqty", "filledquantity", "lastfilledquantity", "cumqty", "originalquantity", "origquantity", "origqty", "quantity") if key in mapping), None)
+              price_col = next((mapping[key] for key in ("averageprice", "avgprice", "price") if key in mapping), None)
+              if time_col is None or side_col is None or qty_col is None:
+                  raw_frame = pd.read_csv(io.BytesIO(raw), header=None, low_memory=False)
+                  side_index = None
+                  for column in raw_frame.columns:
+                      values = raw_frame[column].astype(str).str.upper()
+                      if values.isin(["BUY", "SELL"]).mean() > 0.50:
+                          side_index = int(column)
+                          break
+                  time_index = None
+                  for column in raw_frame.columns:
+                      numeric = pd.to_numeric(raw_frame[column], errors="coerce")
+                      if numeric.notna().mean() > 0.80 and numeric.dropna().median() > 1e11:
+                          time_index = int(column)
+                          break
+                  if side_index is None or time_index is None:
+                      return pd.DataFrame(columns=["time", "side", "quantity", "price"])
+                  if side_index <= 3:
+                      qty_index = 10 if raw_frame.shape[1] > 10 else (5 if raw_frame.shape[1] > 5 else None)
+                      price_index = 7 if raw_frame.shape[1] > 7 else (6 if raw_frame.shape[1] > 6 else None)
+                  else:
+                      qty_index = 3 if raw_frame.shape[1] > 3 else (2 if raw_frame.shape[1] > 2 else None)
+                      price_index = 4 if raw_frame.shape[1] > 4 else (1 if raw_frame.shape[1] > 1 else None)
+                  if qty_index is None:
+                      return pd.DataFrame(columns=["time", "side", "quantity", "price"])
+                  output = pd.DataFrame({
+                      "time": parse_time(raw_frame[time_index]),
+                      "side": raw_frame[side_index].astype(str).str.upper(),
+                      "quantity": pd.to_numeric(raw_frame[qty_index], errors="coerce"),
+                      "price": pd.to_numeric(raw_frame[price_index], errors="coerce") if price_index is not None else 1.0,
+                  })
+              else:
+                  output = pd.DataFrame({
+                      "time": parse_time(first[time_col]),
+                      "side": first[side_col].astype(str).str.upper(),
+                      "quantity": pd.to_numeric(first[qty_col], errors="coerce"),
+                      "price": pd.to_numeric(first[price_col], errors="coerce") if price_col is not None else 1.0,
+                  })
+              output = output[output.side.isin(["BUY", "SELL"])]
+              return output.dropna(subset=["time", "quantity"])
+          '''
+          # Remove indentation introduced by the YAML heredoc while preserving Python body.
+          import textwrap
+          path.write_text(text[:start] + textwrap.dedent(replacement) + text[end:])
+          PY
       - name: Compile and run liquidation cluster research
         run: |
           python -m py_compile research/coinm-liquidation-round49/run.py
