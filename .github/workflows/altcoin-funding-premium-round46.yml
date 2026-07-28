@@ -32,6 +32,32 @@ jobs:
         with:
           path: .cache/binance-funding-premium-round46
           key: funding-premium-round46-usdm-2024-2026h1-v1
+      - name: Patch enriched price frame
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('research/altcoin-round46-funding-premium/run.py')
+          text = path.read_text()
+          old = '''        if len(p) and len(q) and len(f):
+            prices[symbol] = p
+            premium[symbol] = q
+            funding[symbol] = f
+            event_parts.append(build_symbol_events(p, q, f, symbol))
+'''
+          new = '''        if len(p) and len(q) and len(f):
+            p = p.copy()
+            for column in ("open", "high", "low", "close", "volume", "quote_volume"):
+                p[column] = pd.to_numeric(p[column], errors="coerce")
+            p["atr"] = atr(p)
+            prices[symbol] = p
+            premium[symbol] = q
+            funding[symbol] = f
+            event_parts.append(build_symbol_events(p, q, f, symbol))
+'''
+          if old not in text:
+              raise SystemExit('target block not found')
+          path.write_text(text.replace(old, new))
+          PY
       - name: Compile and run funding premium confluence research
         run: |
           python -m py_compile research/altcoin-round27-premium/*.py research/altcoin-round46-funding-premium/run.py
