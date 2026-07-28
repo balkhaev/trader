@@ -4,68 +4,63 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
-// Condition types
-export interface IndicatorCondition {
-  type: "indicator";
-  indicator: "rsi" | "macd" | "bollinger" | "sma" | "ema" | "adx" | "atr";
-  parameter: string;
-  period?: number;
-  operator: ">" | "<" | ">=" | "<=" | "==" | "crosses_above" | "crosses_below";
-  value: number | string;
-}
-
-export interface PriceCondition {
-  type: "price";
-  comparison: "close" | "open" | "high" | "low" | "volume";
-  operator: ">" | "<" | ">=" | "<=" | "==";
-  value: number | string;
-}
-
-export interface NewsCondition {
-  type: "news";
-  sentimentMin?: number;
-  sentimentMax?: number;
-  keywords?: string[];
-  sources?: string[];
-}
-
-export interface TransportCondition {
-  type: "transport";
-  commodity: string;
-  signalDirection?: "bullish" | "bearish";
-  minStrength?: number;
-}
-
-export type StrategyCondition =
-  | IndicatorCondition
-  | PriceCondition
-  | NewsCondition
-  | TransportCondition;
-
-export interface StrategyRule {
-  id: string;
-  name: string;
-  conditions: StrategyCondition[];
-  conditionLogic: "AND" | "OR";
-  action: "long" | "short" | "close_long" | "close_short" | "close_all";
-  priority: number;
-}
+export type StrategyRiskMode = "base" | "boost" | "stopped";
 
 export interface StrategyConfig {
+  kind: "consensus_wif_dot_v1";
   name: string;
   description?: string;
-  symbols: string[];
-  timeframe: "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
-  entryRules: StrategyRule[];
-  exitRules: StrategyRule[];
-  positionSizePercent: number;
-  maxPositions: number;
-  defaultStopLossPercent?: number;
-  defaultTakeProfitPercent?: number;
-  trailingStopPercent?: number;
-  tradingHoursStart?: string;
-  tradingHoursEnd?: string;
-  tradingDays?: number[];
+  timeframe: "15m";
+  execution: {
+    venue: "binance_usdm";
+    orderType: "market" | "limit";
+    roundTurnCostBps: number;
+    maxPositions: number;
+    maxGrossLeverage: number;
+    skipOvernight: boolean;
+    skipFundingCrossing: boolean;
+  };
+  wif: {
+    enabled: boolean;
+    symbol: "WIFUSDT";
+    allowedWeekdaysUtc: number[];
+    move45mAtrMax: number;
+    volumeZMin: number;
+    lowerWickRatioMin: number;
+    closeLocationMin: number;
+    takerImbalanceMin: number;
+    oiZMax: number;
+    strengthMin: number;
+    stopAtr: number;
+    targetR: number;
+    maxHoldMinutes: number;
+  };
+  dot: {
+    enabled: boolean;
+    symbol: "DOTUSDT";
+    entryDelayMinutes: number;
+    weekdayFundingThresholdBps: Record<string, number>;
+    stopAtr: number;
+    targetR: number;
+    maxHoldMinutes: number;
+  };
+  risk: {
+    baseWifRiskPercent: number;
+    baseDotRiskPercent: number;
+    boostWifRiskPercent: number;
+    boostDotRiskPercent: number;
+    boostTriggerProfitPercent: number;
+    deRiskDrawdownPercent: number;
+    hardStopDrawdownPercent: number;
+  };
+  runtime?: {
+    mode: StrategyRiskMode;
+    initialEquity: number;
+    equity: number;
+    highWaterEquity: number;
+    lastDeriskHighWaterEquity: number;
+    updatedAt: string;
+  };
 }
 
 export interface Strategy {
@@ -90,19 +85,14 @@ async function fetchWithAuth<T>(
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers: { "Content-Type": "application/json", ...options?.headers },
   });
-
   if (!response.ok) {
     const error = await response
       .json()
       .catch(() => ({ error: "Request failed" }));
     throw new Error(error.error || "Request failed");
   }
-
   return response.json();
 }
 
@@ -113,11 +103,18 @@ export function useStrategies() {
   });
 }
 
-export function usePublicStrategies() {
+export function useCanonicalStrategy() {
   return useQuery({
-    queryKey: ["strategies", "public"],
+    queryKey: ["strategies", "canonical"],
+    queryFn: () => fetchWithAuth<Strategy>("/api/strategy/canonical"),
+  });
+}
+
+export function useDefaultStrategy() {
+  return useQuery({
+    queryKey: ["strategies", "default"],
     queryFn: () =>
-      fetchWithAuth<{ strategies: Strategy[] }>("/api/strategy/public"),
+      fetchWithAuth<{ config: StrategyConfig }>("/api/strategy/default"),
   });
 }
 
@@ -140,24 +137,8 @@ export function useStrategyCode(strategyId: string | null) {
   });
 }
 
-export function useCreateStrategy() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (config: StrategyConfig) =>
-      fetchWithAuth<{ success: boolean; strategy: Strategy }>("/api/strategy", {
-        method: "POST",
-        body: JSON.stringify(config),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["strategies"] });
-    },
-  });
-}
-
 export function useUpdateStrategy() {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: ({
       strategyId,
@@ -168,44 +149,48 @@ export function useUpdateStrategy() {
     }) =>
       fetchWithAuth<{ success: boolean; strategy: Strategy }>(
         `/api/strategy/${strategyId}`,
-        {
-          method: "PUT",
-          body: JSON.stringify(config),
-        }
+        { method: "PUT", body: JSON.stringify(config) }
       ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["strategies"] });
-    },
-  });
-}
-
-export function useDeleteStrategy() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (strategyId: string) =>
-      fetchWithAuth<{ success: boolean }>(`/api/strategy/${strategyId}`, {
-        method: "DELETE",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["strategies"] });
-    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["strategies"] }),
   });
 }
 
 export function useToggleStrategy() {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (strategyId: string) =>
       fetchWithAuth<{ success: boolean; isActive: boolean }>(
         `/api/strategy/${strategyId}/toggle`,
-        {
-          method: "POST",
-        }
+        { method: "POST" }
       ),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["strategies"] }),
+  });
+}
+
+export function useScanStrategy() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (execute: boolean) =>
+      fetchWithAuth<{
+        scanned: boolean;
+        riskState?: { mode: StrategyRiskMode };
+        signals: Array<{
+          id: string;
+          module: string;
+          symbol: string;
+          executed: boolean;
+          executionReason?: string;
+        }>;
+        reason?: string;
+      }>("/api/strategy/scan", {
+        method: "POST",
+        body: JSON.stringify({ execute }),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["strategies"] });
+      queryClient.invalidateQueries({ queryKey: ["auto-trading"] });
     },
   });
 }
@@ -215,10 +200,7 @@ export function useGenerateCode() {
     mutationFn: (config: StrategyConfig) =>
       fetchWithAuth<{ code: string; language: string }>(
         "/api/strategy/generate-code",
-        {
-          method: "POST",
-          body: JSON.stringify(config),
-        }
+        { method: "POST", body: JSON.stringify(config) }
       ),
   });
 }

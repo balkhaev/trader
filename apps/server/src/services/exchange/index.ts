@@ -1,3 +1,4 @@
+import { BinanceExchangeService } from "./binance";
 import { BybitExchangeService } from "./bybit";
 import type {
   ExchangeCredentials,
@@ -5,6 +6,7 @@ import type {
   ExchangeType,
 } from "./types";
 
+export { BinanceExchangeService } from "./binance";
 export { BybitExchangeService } from "./bybit";
 export * from "./types";
 
@@ -13,10 +15,10 @@ export function createExchangeService(
   credentials: ExchangeCredentials
 ): ExchangeService {
   switch (exchange) {
+    case "binance":
+      return new BinanceExchangeService(credentials);
     case "bybit":
       return new BybitExchangeService(credentials);
-    case "binance":
-      throw new Error("Binance integration not implemented yet");
     case "tinkoff":
       throw new Error("Tinkoff integration not implemented yet");
     default:

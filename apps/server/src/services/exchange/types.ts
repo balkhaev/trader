@@ -24,9 +24,10 @@ export interface OrderParams {
   side: "buy" | "sell";
   type: "market" | "limit";
   quantity: string;
-  price?: string; // Required for limit orders
+  price?: string;
   stopLoss?: string;
   takeProfit?: string;
+  reduceOnly?: boolean;
 }
 
 export interface Order {
@@ -70,24 +71,14 @@ export interface ExchangeCredentials {
 
 export interface ExchangeService {
   readonly exchange: ExchangeType;
-
-  // Account
   getAccountInfo(): Promise<AccountInfo>;
   getBalances(): Promise<Balance[]>;
-
-  // Positions
   getPositions(): Promise<Position[]>;
-
-  // Orders
   createOrder(params: OrderParams): Promise<Order>;
   cancelOrder(orderId: string, symbol: string): Promise<void>;
   getOpenOrders(symbol?: string): Promise<Order[]>;
-
-  // History
   getOrderHistory(symbol?: string, limit?: number): Promise<Order[]>;
   getTradeHistory(symbol?: string, limit?: number): Promise<Trade[]>;
-
-  // Market data
   getPrice(symbol: string): Promise<string>;
   getPrices(symbols: string[]): Promise<Record<string, string>>;
 }

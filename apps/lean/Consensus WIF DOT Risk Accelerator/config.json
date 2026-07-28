@@ -1,0 +1,61 @@
+{
+  "algorithm-language": "Python",
+  "parameters": {
+    "start_date": {
+      "value": "2024-01-01",
+      "type": "string",
+      "description": "Backtest start date"
+    },
+    "end_date": {
+      "value": "2026-07-01",
+      "type": "string",
+      "description": "Backtest end date"
+    },
+    "cash": {
+      "value": 10000,
+      "type": "float",
+      "description": "Initial capital"
+    },
+    "base_wif_risk": {
+      "value": 0.03,
+      "type": "float",
+      "description": "WIF stop-risk in base mode"
+    },
+    "base_dot_risk": {
+      "value": 0.05,
+      "type": "float",
+      "description": "DOT stop-risk in base mode"
+    },
+    "boost_wif_risk": {
+      "value": 0.075,
+      "type": "float",
+      "description": "WIF stop-risk after +15% high-water trigger"
+    },
+    "boost_dot_risk": {
+      "value": 0.10,
+      "type": "float",
+      "description": "DOT stop-risk after +15% high-water trigger"
+    },
+    "boost_trigger": {
+      "value": 0.15,
+      "type": "float",
+      "description": "Closed-equity profit needed for boost mode"
+    },
+    "derisk_drawdown": {
+      "value": 0.08,
+      "type": "float",
+      "description": "Drawdown from high-water that returns to base risk"
+    },
+    "hard_stop_drawdown": {
+      "value": 0.15,
+      "type": "float",
+      "description": "Drawdown that disables new positions"
+    },
+    "max_gross": {
+      "value": 3.0,
+      "type": "float",
+      "description": "Maximum gross notional divided by equity"
+    }
+  },
+  "description": "Consensus WIF OI-flush + DOT negative-funding rebound with staged risk acceleration"
+}

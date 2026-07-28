@@ -1,77 +1,93 @@
-# trader
+# Trader — Consensus WIF + DOT
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines Next.js, Hono, and more.
+Deterministic Binance USD-M trading platform for the researched **Consensus WIF + DOT Risk Accelerator V1** strategy.
 
-## Features
+The previous generic indicator builder and SMA example are replaced by one explicit production strategy:
 
-- **TypeScript** - For type safety and improved developer experience
-- **Next.js** - Full-stack React framework
-- **TailwindCSS** - Utility-first CSS for rapid UI development
-- **shadcn/ui** - Reusable UI components
-- **Hono** - Lightweight, performant server framework
-- **Bun** - Runtime environment
-- **Drizzle** - TypeScript-first ORM
-- **PostgreSQL** - Database engine
-- **Authentication** - Better-Auth
-- **Turborepo** - Optimized monorepo build system
-- **Biome** - Linting and formatting
-- **Husky** - Git hooks for code quality
+- **WIFUSDT OI Flush Reclaim** on closed 15-minute data;
+- **DOTUSDT negative-funding rebound** using only an already-published funding rate;
+- absolute exchange stop-loss and take-profit orders;
+- risk-based position sizing with a 3× portfolio gross cap;
+- base → boost → automatic de-risk → hard-stop state machine;
+- optional scheduler, disabled by default;
+- Binance USD-M REST execution plus a LEAN replay harness.
 
-## Getting Started
+> This repository implements a high-risk research strategy. Historical 100% returns are not a guarantee. Start on Binance testnet and keep `STRATEGY_SCHEDULER_ENABLED` disabled until the data pipeline and executions are verified.
 
-First, install the dependencies:
+## Strategy summary
+
+### WIFUSDT
+
+Long only on Tuesday, Friday and Sunday after a 45-minute fall of at least 2 ATR with elevated volume, lower-wick reclaim, non-worsening taker flow, OI flush and total strength of at least 3.5. Stop: 1.25 ATR. Target: 5R. Time exit: 60 minutes.
+
+### DOTUSDT
+
+Long 15 minutes after an already-known negative funding event. Mon/Tue threshold: -2.25 bps; Fri/Sat/Sun: -2.50 bps. Stop: 6 ATR. Target: 2R. Time exit: 8 hours.
+
+### Risk Accelerator
+
+| State | WIF stop-risk | DOT stop-risk |
+|---|---:|---:|
+| Base | 3% | 5% |
+| Boost after +15% at a new high-water | 7.5% | 10% |
+| De-risk after 8% drawdown | back to base | back to base |
+| Hard stop after 15% drawdown | no new positions | no new positions |
+
+Maximum open positions: 2. Maximum gross notional: 3× equity.
+
+Full operating specification: [`docs/consensus-wif-dot.md`](docs/consensus-wif-dot.md).
+
+## Stack
+
+- Bun + Turborepo
+- TypeScript
+- Next.js / React
+- Hono
+- Drizzle / PostgreSQL
+- Binance USD-M REST API
+- QuantConnect LEAN replay harness
+
+## Setup
 
 ```bash
 bun install
-```
-## Database Setup
-
-This project uses PostgreSQL with Drizzle ORM.
-
-1. Make sure you have a PostgreSQL database set up.
-2. Update your `apps/server/.env` file with your PostgreSQL connection details.
-
-3. Apply the schema to your database:
-```bash
 bun run db:push
-```
-
-
-Then, run the development server:
-
-```bash
 bun run dev
 ```
 
-Open [http://localhost:3001](http://localhost:3001) in your browser to see the web application.
-The API is running at [http://localhost:3000](http://localhost:3000).
+Web: `http://localhost:3001`
+API: `http://localhost:3000`
 
+Add a **Binance** exchange account in testnet mode, open `/strategy-builder`, activate the canonical strategy, and configure execution in `/auto-trading`.
 
+The scheduler is deliberately opt-in:
 
-
-
-
-
-## Project Structure
-
-```
-trader/
-├── apps/
-│   ├── web/         # Frontend application (Next.js)
-│   └── server/      # Backend API (Hono)
-├── packages/
-│   ├── api/         # API layer / business logic
-│   ├── auth/        # Authentication configuration & logic
-│   └── db/          # Database schema & queries
+```bash
+STRATEGY_SCHEDULER_ENABLED=true bun run dev:server
 ```
 
-## Available Scripts
+Without this variable, use the **Shadow scan** button or call:
 
-- `bun run dev`: Start all applications in development mode
-- `bun run build`: Build all applications
-- `bun run dev:web`: Start only the web application
-- `bun run dev:server`: Start only the server
-- `bun run check-types`: Check TypeScript types across all apps
-- `bun run db:push`: Push schema changes to database
-- `bun run db:studio`: Open database studio UI
-- `bun run check`: Run Biome formatting and linting
+```bash
+curl -X POST http://localhost:3000/api/strategy/scan \
+  -H 'Content-Type: application/json' \
+  -d '{"execute":false}'
+```
+
+## Verification
+
+```bash
+bun run check-types
+bun run test:strategy
+```
+
+## Project structure
+
+```text
+apps/server/src/services/strategy/   signal evaluation, market scan, scheduler
+apps/server/src/services/exchange/   Binance USD-M / Bybit adapters
+apps/web/src/app/strategy-builder/   fixed strategy control panel
+apps/web/src/app/auto-trading/       execution guardrails and logs
+apps/lean/Consensus WIF DOT Risk Accelerator/  replay harness
+packages/db/src/schema/strategy.ts   canonical strategy configuration
+```
