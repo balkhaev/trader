@@ -8,6 +8,7 @@ on:
       - "apps/server/src/services/auto-trading/**"
       - "apps/server/src/routes/strategy.ts"
       - "apps/server/src/routes/auto-trading.ts"
+      - "apps/web/src/proxy.ts"
       - "apps/web/src/app/layout.tsx"
       - "apps/web/src/app/page.tsx"
       - "apps/web/src/index.css"
@@ -61,7 +62,7 @@ jobs:
           if grep -E '^(src/routes/(auto-trading|strategy)\.ts|src/services/(auto-trading/auto-trading\.service|exchange/(binance|index|types)|strategy/[^:]+)\.ts)' server-typecheck.log; then
             exit 1
           fi
-          if grep -E '^(src/(app/(layout|page|strategy-builder/page|auto-trading/page|signals/page|validation/page|research/page|strategies/page)\.tsx|components/bloomberg-header\.tsx))' web-typecheck.log; then
+          if grep -E '^(src/(proxy\.ts|app/(layout|page|strategy-builder/page|auto-trading/page|signals/page|validation/page|research/page|strategies/page)\.tsx|components/bloomberg-header\.tsx))' web-typecheck.log; then
             exit 1
           fi
           if grep -E '^src/schema/strategy\.ts' db-typecheck.log; then
