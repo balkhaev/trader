@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "../index.css";
+import { AuthGate } from "@/components/auth-gate";
 import { BloombergHeader } from "@/components/bloomberg-header";
 import Providers from "@/components/providers";
 
@@ -33,7 +34,9 @@ export default function RootLayout({
         <Providers>
           <div className="min-h-svh bg-[radial-gradient(circle_at_top_right,oklch(0.21_0.05_160_/_0.28),transparent_38%),radial-gradient(circle_at_bottom_left,oklch(0.2_0.05_250_/_0.22),transparent_36%)]">
             <BloombergHeader />
-            <main className="mx-auto w-full max-w-[1680px]">{children}</main>
+            <main className="mx-auto w-full max-w-[1680px]">
+              <AuthGate>{children}</AuthGate>
+            </main>
           </div>
         </Providers>
       </body>
