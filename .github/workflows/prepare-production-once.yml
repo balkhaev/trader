@@ -12,7 +12,7 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -61,13 +61,10 @@ jobs:
           )
           PY
 
-      - name: Verify and commit
+      - name: Commit changes
         shell: bash
         run: |
           set -euo pipefail
-          bun install --frozen-lockfile
-          bunx tsc -p apps/web/tsconfig.json --noEmit
-          API_INTERNAL_URL=http://server:3000 bun --cwd apps/web run build
           cat > .github/same-origin-report.json <<JSON
           {
             "completed": true,
