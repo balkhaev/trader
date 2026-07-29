@@ -17,7 +17,7 @@ function json(data: unknown, status = 200) {
 describe("Binance USD-M strategy adapter", () => {
   test("requires trading permission and One-way Mode", async () => {
     const calls: string[] = [];
-    globalThis.fetch = (async (input) => {
+    globalThis.fetch = (async (input: string | URL | Request) => {
       const url = String(input);
       calls.push(url);
       if (url.includes("/fapi/v3/account")) {
@@ -46,7 +46,10 @@ describe("Binance USD-M strategy adapter", () => {
 
   test("places market entry, stop and take-profit protection", async () => {
     const requests: Array<{ url: string; method: string; body: string }> = [];
-    globalThis.fetch = (async (input, init) => {
+    globalThis.fetch = (async (
+      input: string | URL | Request,
+      init?: RequestInit
+    ) => {
       const url = String(input);
       const method = init?.method ?? "GET";
       const body = typeof init?.body === "string" ? init.body : "";
