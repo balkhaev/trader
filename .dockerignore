@@ -1,0 +1,14 @@
+.git
+.github/repository-cleanup-report.json
+.github/same-origin-report.json
+**/node_modules
+**/.next
+**/dist
+**/__pycache__
+.env
+.env.*
+!.env.production.example
+*.log
+coverage
+artifacts
+data

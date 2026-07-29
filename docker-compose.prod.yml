@@ -1,0 +1,95 @@
+name: trader-production
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trader}
+      POSTGRES_USER: ${POSTGRES_USER:-trader}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trader} -d ${POSTGRES_DB:-trader}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    image: ${SERVER_IMAGE:-ghcr.io/balkhaev/trader-server:latest}
+    pull_policy: always
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trader}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trader}
+      BETTER_AUTH_URL: ${PUBLIC_URL:?Set PUBLIC_URL in .env.production}
+      CORS_ORIGIN: ${PUBLIC_URL}
+      STRATEGY_SCHEDULER_ENABLED: ${STRATEGY_SCHEDULER_ENABLED:-true}
+      ALLOW_LIVE_TRADING: ${ALLOW_LIVE_TRADING:-false}
+    command:
+      - sh
+      - -lc
+      - bun --cwd packages/db run db:push && exec bun --cwd apps/server run start
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - const r=await fetch('http://localhost:3000/health'); if(!r.ok) process.exit(1)
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: ${WEB_IMAGE:-ghcr.io/balkhaev/trader-web:latest}
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOSTNAME: 0.0.0.0
+      API_INTERNAL_URL: http://server:3000
+    depends_on:
+      server:
+        condition: service_healthy
+    expose:
+      - "3001"
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - const r=await fetch('http://localhost:3001'); if(!r.ok) process.exit(1)
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
