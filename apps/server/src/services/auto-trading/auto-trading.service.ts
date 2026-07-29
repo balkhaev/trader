@@ -18,6 +18,11 @@ import {
   type StrategySignalPlan,
 } from "../strategy/consensus-wif-dot.service";
 import { strategyService } from "../strategy/strategy.service";
+import {
+  buildEquityCurve,
+  type ClosedEquityTrade,
+  type EquityCurvePoint,
+} from "./dashboard";
 import { calculatePaperPnl } from "./paper-trading";
 
 type Signal = InferSelectModel<typeof signal>;
@@ -86,11 +91,41 @@ export interface PaperTradingPortfolio {
   positions: Array<{
     signalId: string;
     symbol: string;
+    side: "long";
     entryPrice: number;
     currentPrice: number;
     quantity: number;
     unrealizedPnl: number;
+    stopPrice?: number;
+    takeProfitPrice?: number;
   }>;
+}
+
+export interface AutoTradingDashboardPosition {
+  signalId?: string;
+  symbol: string;
+  side: "long" | "short";
+  entryPrice: number;
+  currentPrice: number;
+  quantity: number;
+  unrealizedPnl: number;
+  unrealizedPnlPercent: number;
+  stopPrice?: number;
+  takeProfitPrice?: number;
+}
+
+export interface AutoTradingDashboard {
+  mode: "paper" | "exchange";
+  equity: number;
+  initialEquity: number;
+  totalPnl: number;
+  totalPnlPercent: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  closedTrades: number;
+  winRate: number | null;
+  positions: AutoTradingDashboardPosition[];
+  equityCurve: EquityCurvePoint[];
 }
 
 function metadataOf(sig: Signal): ConsensusSignalMetadata | null {
@@ -191,10 +226,13 @@ async function getPaperPortfolio(
       return {
         signalId: item.id,
         symbol: item.symbol,
+        side: "long" as const,
         entryPrice,
         currentPrice,
         quantity,
         unrealizedPnl: (currentPrice - entryPrice) * quantity,
+        stopPrice: metadata.positionPlan?.stopPrice,
+        takeProfitPrice: metadata.positionPlan?.takeProfitPrice,
       };
     })
   );
@@ -209,6 +247,20 @@ async function getPaperPortfolio(
     ),
     positions: prices,
   };
+}
+
+function resolveDashboardInitialEquity(
+  isPaper: boolean,
+  runtimeInitialEquity: number | undefined,
+  equity: number,
+  realizedPnl: number,
+  unrealizedPnl: number
+): number {
+  if (isPaper) {
+    return runtimeInitialEquity ?? PAPER_INITIAL_EQUITY;
+  }
+  const estimatedExchangeStart = equity - realizedPnl - unrealizedPnl;
+  return estimatedExchangeStart > 0 ? estimatedExchangeStart : equity;
 }
 
 async function cancelSymbolOrders(
@@ -563,6 +615,136 @@ export const autoTradingService = {
 
   getPaperPortfolioState(userId: string): Promise<PaperTradingPortfolio> {
     return getPaperPortfolio(userId);
+  },
+
+  async getDashboard(userId: string): Promise<AutoTradingDashboard> {
+    const config = await this.getConfig(userId);
+    if (!config) {
+      throw new Error("Auto-trading is not configured");
+    }
+    const isPaper = !config.exchangeAccountId;
+    const [strategyRecord, rows, tradingState] = await Promise.all([
+      strategyService.getActiveByUser(userId),
+      db
+        .select()
+        .from(signal)
+        .where(eq(signal.userId, userId))
+        .orderBy(desc(signal.createdAt))
+        .limit(2000),
+      isPaper ? getPaperPortfolio(userId) : this.getExecutionContext(userId),
+    ]);
+    const strategyRows = rows.flatMap((item) => {
+      const metadata = metadataOf(item);
+      const matchesMode = metadata && Boolean(metadata.paperTrade) === isPaper;
+      return metadata && matchesMode ? [{ item, metadata }] : [];
+    });
+    const closedTrades: ClosedEquityTrade[] = strategyRows.flatMap(
+      ({ item, metadata }) => {
+        const realizedPercent = Number(item.realizedPnl);
+        if (!(item.exitPrice && Number.isFinite(realizedPercent))) {
+          return [];
+        }
+        const notional = Number(
+          metadata.positionPlan?.cappedNotional ??
+            metadata.positionPreview?.cappedNotional ??
+            0
+        );
+        const pnlUsdt =
+          metadata.paperPnlUsdt ?? (notional * realizedPercent) / 100;
+        if (!Number.isFinite(pnlUsdt)) {
+          return [];
+        }
+        return [
+          {
+            closedAt: item.exitAt ?? item.executedAt ?? item.createdAt,
+            pnlUsdt,
+          },
+        ];
+      }
+    );
+    const openSignalsBySymbol = new Map(
+      strategyRows
+        .filter(({ item }) => item.status === "executed" && !item.exitPrice)
+        .map(({ item, metadata }) => [item.symbol, { item, metadata }])
+    );
+    const paperState = isPaper ? (tradingState as PaperTradingPortfolio) : null;
+    const exchangeState = isPaper
+      ? null
+      : (tradingState as AutoTradingExecutionContext);
+    const positions: AutoTradingDashboardPosition[] = isPaper
+      ? (paperState?.positions ?? []).map((position) => {
+          const notional = position.entryPrice * position.quantity;
+          return {
+            ...position,
+            unrealizedPnlPercent:
+              notional > 0 ? (position.unrealizedPnl / notional) * 100 : 0,
+          };
+        })
+      : (exchangeState?.openPositions ?? [])
+          .filter((position) => STRATEGY_SYMBOLS.has(position.symbol))
+          .map((position) => {
+            const entryPrice = Number(position.entryPrice);
+            const currentPrice = Number(position.currentPrice);
+            const quantity = Number(position.quantity);
+            const unrealizedPnl = Number(position.unrealizedPnl);
+            const notional = entryPrice * quantity;
+            const openSignal = openSignalsBySymbol.get(position.symbol);
+            return {
+              signalId: openSignal?.item.id,
+              symbol: position.symbol,
+              side: position.side,
+              entryPrice,
+              currentPrice,
+              quantity,
+              unrealizedPnl,
+              unrealizedPnlPercent:
+                notional > 0 ? (unrealizedPnl / notional) * 100 : 0,
+              stopPrice: openSignal?.metadata.positionPlan?.stopPrice,
+              takeProfitPrice:
+                openSignal?.metadata.positionPlan?.takeProfitPrice,
+            };
+          });
+    const realizedPnl = closedTrades.reduce(
+      (sum, trade) => sum + trade.pnlUsdt,
+      0
+    );
+    const unrealizedPnl = positions.reduce(
+      (sum, position) => sum + position.unrealizedPnl,
+      0
+    );
+    const equity = isPaper
+      ? (paperState?.equity ?? 0)
+      : (exchangeState?.equity ?? 0) + unrealizedPnl;
+    const initialEquity = resolveDashboardInitialEquity(
+      isPaper,
+      strategyRecord?.config.runtime?.initialEquity,
+      equity,
+      realizedPnl,
+      unrealizedPnl
+    );
+    const totalPnl = equity - initialEquity;
+    const wins = strategyRows.filter(
+      ({ item }) => item.exitPrice && item.isWin === true
+    ).length;
+
+    return {
+      mode: isPaper ? "paper" : "exchange",
+      equity,
+      initialEquity,
+      totalPnl,
+      totalPnlPercent: initialEquity > 0 ? (totalPnl / initialEquity) * 100 : 0,
+      realizedPnl,
+      unrealizedPnl,
+      closedTrades: closedTrades.length,
+      winRate:
+        closedTrades.length > 0 ? (wins / closedTrades.length) * 100 : null,
+      positions,
+      equityCurve: buildEquityCurve({
+        initialEquity,
+        currentEquity: equity,
+        trades: closedTrades,
+      }),
+    };
   },
 
   async shouldAutoExecute(

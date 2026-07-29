@@ -11,10 +11,12 @@ import {
   Square,
   WalletCards,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { PageLoading } from "@/components/layout";
+import { OpenPositionsTable } from "@/components/trading/open-positions-table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -36,13 +38,14 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import {
   type ExecutionMode,
   useAutoTradingConfig,
+  useAutoTradingDashboard,
   useAutoTradingLogs,
-  useAutoTradingStats,
   useExecutionPreflight,
   useStartAutoTrading,
   useStopAutoTrading,
@@ -52,6 +55,32 @@ import {
   useExchangeAccounts,
 } from "@/hooks/use-exchange";
 import { cn } from "@/lib/utils";
+
+const EquityCurveChart = dynamic(
+  () =>
+    import("@/components/trading/equity-curve-chart").then(
+      (module) => module.EquityCurveChart
+    ),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[280px] w-full" />,
+  }
+);
+
+const moneyFormatter = new Intl.NumberFormat("ru-RU", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 2,
+});
+
+const percentFormatter = new Intl.NumberFormat("ru-RU", {
+  maximumFractionDigits: 2,
+});
+
+const signedPercentFormatter = new Intl.NumberFormat("ru-RU", {
+  signDisplay: "exceptZero",
+  maximumFractionDigits: 2,
+});
 
 const LOG_LABELS: Record<string, string> = {
   executed: "Сделка открыта",
@@ -64,11 +93,21 @@ function money(value: number | undefined): string {
   if (value === undefined || !Number.isFinite(value)) {
     return "—";
   }
-  return new Intl.NumberFormat("ru-RU", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  }).format(value);
+  return moneyFormatter.format(value);
+}
+
+function percent(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+  return `${percentFormatter.format(value)}%`;
+}
+
+function signedPercent(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+  return `${signedPercentFormatter.format(value)}%`;
 }
 
 function PendingLabel({ children }: { children: React.ReactNode }) {
@@ -84,7 +123,7 @@ function PendingLabel({ children }: { children: React.ReactNode }) {
 export default function TradingHomePage() {
   const config = useAutoTradingConfig();
   const preflight = useExecutionPreflight();
-  const stats = useAutoTradingStats();
+  const dashboard = useAutoTradingDashboard(Boolean(config.data?.enabled));
   const logs = useAutoTradingLogs(5);
   const accounts = useExchangeAccounts();
   const addAccount = useAddExchangeAccount();
@@ -191,26 +230,109 @@ export default function TradingHomePage() {
             </Button>
           </div>
 
-          <div className="grid gap-px bg-border sm:grid-cols-3">
+          <div className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-4">
             <div className="bg-card p-4">
-              <p className="text-muted-foreground text-xs">Баланс</p>
+              <p className="text-muted-foreground text-xs">Капитал</p>
               <p className="mt-1 font-mono font-semibold text-xl">
-                {money(preflight.data?.equity)}
+                {money(dashboard.data?.equity ?? preflight.data?.equity)}
+              </p>
+            </div>
+            <div className="bg-card p-4">
+              <p className="text-muted-foreground text-xs">Общий результат</p>
+              <p className="mt-1 font-mono font-semibold text-xl">
+                {money(dashboard.data?.totalPnl)}
+              </p>
+              <p className="mt-1 font-mono text-muted-foreground text-xs tabular-nums">
+                {signedPercent(dashboard.data?.totalPnlPercent)}
               </p>
             </div>
             <div className="bg-card p-4">
               <p className="text-muted-foreground text-xs">Открыто позиций</p>
               <p className="mt-1 font-mono font-semibold text-xl">
-                {preflight.data?.positions ?? 0}
+                {dashboard.data?.positions.length ??
+                  preflight.data?.positions ??
+                  0}
               </p>
             </div>
             <div className="bg-card p-4">
-              <p className="text-muted-foreground text-xs">Сделок сегодня</p>
+              <p className="text-muted-foreground text-xs">Успешных сделок</p>
               <p className="mt-1 font-mono font-semibold text-xl">
-                {stats.data?.todayExecuted ?? 0}
+                {percent(dashboard.data?.winRate)}
+              </p>
+              <p className="mt-1 text-muted-foreground text-xs">
+                Закрыто: {dashboard.data?.closedTrades ?? 0}
               </p>
             </div>
           </div>
+
+          {dashboard.isError ? (
+            <Alert>
+              <AlertTitle>Статистика временно не обновилась</AlertTitle>
+              <AlertDescription>
+                {dashboard.error.message}. Бот продолжает работать; следующая
+                попытка будет через 30 секунд.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Капитал</CardTitle>
+              <CardDescription>
+                Закрытые сделки и текущий плавающий результат.
+              </CardDescription>
+              {dashboard.data ? (
+                <CardAction>
+                  <Badge
+                    variant={
+                      dashboard.data.totalPnl < 0 ? "destructive" : "secondary"
+                    }
+                  >
+                    {signedPercent(dashboard.data.totalPnlPercent)}
+                  </Badge>
+                </CardAction>
+              ) : null}
+            </CardHeader>
+            <CardContent>
+              {dashboard.data ? (
+                <div className="flex flex-col gap-4">
+                  <EquityCurveChart data={dashboard.data.equityCurve} />
+                  <div className="flex flex-wrap gap-x-6 gap-y-2 border-t pt-4 text-xs">
+                    <p className="text-muted-foreground">
+                      Реализовано:{" "}
+                      <span className="font-mono text-foreground tabular-nums">
+                        {money(dashboard.data.realizedPnl)}
+                      </span>
+                    </p>
+                    <p className="text-muted-foreground">
+                      В открытых позициях:{" "}
+                      <span className="font-mono text-foreground tabular-nums">
+                        {money(dashboard.data.unrealizedPnl)}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <Skeleton className="h-[328px] w-full" />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Открытые позиции</CardTitle>
+              <CardDescription>
+                Цена входа, текущая котировка, P&amp;L и защитные уровни.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0">
+              {dashboard.data ? (
+                <OpenPositionsTable positions={dashboard.data.positions} />
+              ) : (
+                <Skeleton className="mx-6 h-48 w-auto" />
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

@@ -106,6 +106,24 @@ autoTrading.get("/preflight", async (c) => {
   return c.json(await autoTradingService.getPreflight(user.id));
 });
 
+autoTrading.get("/dashboard", async (c) => {
+  const user = await getUser(c);
+  if (!user) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  try {
+    return c.json(await autoTradingService.getDashboard(user.id));
+  } catch (error) {
+    return c.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Dashboard is unavailable",
+      },
+      400
+    );
+  }
+});
+
 autoTrading.put(
   "/config",
   zValidator("json", updateConfigSchema),

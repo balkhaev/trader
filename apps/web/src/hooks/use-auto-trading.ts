@@ -55,6 +55,33 @@ export interface ExecutionPreflight {
 
 export type ExecutionMode = ExecutionPreflight["mode"];
 
+export interface AutoTradingDashboardPosition {
+  signalId?: string;
+  symbol: string;
+  side: "long" | "short";
+  entryPrice: number;
+  currentPrice: number;
+  quantity: number;
+  unrealizedPnl: number;
+  unrealizedPnlPercent: number;
+  stopPrice?: number;
+  takeProfitPrice?: number;
+}
+
+export interface AutoTradingDashboard {
+  mode: ExecutionMode;
+  equity: number;
+  initialEquity: number;
+  totalPnl: number;
+  totalPnlPercent: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  closedTrades: number;
+  winRate: number | null;
+  positions: AutoTradingDashboardPosition[];
+  equityCurve: Array<{ time: string; equity: number; pnl: number }>;
+}
+
 async function fetchWithAuth<T>(endpoint: string, options?: RequestInit) {
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
@@ -83,6 +110,16 @@ export function useExecutionPreflight() {
     queryFn: () =>
       fetchWithAuth<ExecutionPreflight>("/api/auto-trading/preflight"),
     refetchInterval: 30_000,
+  });
+}
+
+export function useAutoTradingDashboard(enabled = true) {
+  return useQuery({
+    queryKey: ["auto-trading", "dashboard"],
+    queryFn: () =>
+      fetchWithAuth<AutoTradingDashboard>("/api/auto-trading/dashboard"),
+    enabled,
+    refetchInterval: enabled ? 30_000 : false,
   });
 }
 
