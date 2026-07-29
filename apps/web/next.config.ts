@@ -1,20 +1,17 @@
-import "@trader/env/web";
 import type { NextConfig } from "next";
+
+const apiInternalUrl = process.env.API_INTERNAL_URL ?? "http://localhost:3000";
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
   reactCompiler: true,
-  images: {
-    remotePatterns: [
+  async rewrites() {
+    return [
       {
-        protocol: "https",
-        hostname: "polymarket-upload.s3.us-east-2.amazonaws.com",
+        source: "/api/:path*",
+        destination: `${apiInternalUrl}/api/:path*`,
       },
-      {
-        protocol: "https",
-        hostname: "**.polymarket.com",
-      },
-    ],
+    ];
   },
 };
 
