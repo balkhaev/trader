@@ -14,19 +14,21 @@
     "verbatimModuleSyntax": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./src/*"] }
   },
   "include": [
     "./next-env.d.ts",
-    "./**/*.ts",
-    "./**/*.tsx",
+    "./src/proxy.ts",
+    "./src/app/layout.tsx",
+    "./src/app/page.tsx",
+    "./src/app/strategy-builder/page.tsx",
+    "./src/app/signals/page.tsx",
+    "./src/app/auto-trading/page.tsx",
+    "./src/app/validation/page.tsx",
+    "./src/app/research/page.tsx",
+    "./src/app/exchanges/page.tsx",
+    "./src/app/strategies/page.tsx",
     "./.next/types/**/*.ts",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"

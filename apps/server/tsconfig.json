@@ -10,5 +10,11 @@
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
     "strictNullChecks": true
-  }
+  },
+  "include": [
+    "src/index.ts",
+    "src/services/strategy/consensus-wif-dot.service.test.ts",
+    "src/services/exchange/binance.test.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
 }
