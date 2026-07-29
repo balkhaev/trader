@@ -53,7 +53,7 @@ jobs:
           bunx tsc -p apps/web/tsconfig.json --noEmit
           bunx tsc -p packages/db/tsconfig.json --noEmit
       - name: Production web build
-        run: bun --cwd apps/web run build
+        run: bun run --cwd apps/web build
       - name: LEAN syntax
         run: python -m py_compile "apps/lean/Consensus WIF DOT Risk Accelerator/main.py"
 

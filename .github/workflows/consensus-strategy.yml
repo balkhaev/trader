@@ -40,7 +40,7 @@ jobs:
           bunx tsc -p apps/web/tsconfig.json --noEmit
           bunx tsc -p packages/db/tsconfig.json --noEmit
       - name: Production frontend build
-        run: bun --cwd apps/web run build
+        run: bun run --cwd apps/web build
       - name: Strategy-only runtime invariants
         shell: bash
         run: |
