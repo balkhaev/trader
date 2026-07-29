@@ -1,7 +1,9 @@
 {
   "completed": true,
-  "sourceSha": "b4b7d83697a4422d3d5697e993ab66410c725c33",
-  "serverImage": "ghcr.io/balkhaev/trader-server:sha-b4b7d83697a4422d3d5697e993ab66410c725c33",
-  "webImage": "ghcr.io/balkhaev/trader-web:sha-b4b7d83697a4422d3d5697e993ab66410c725c33",
-  "publishedAt": "2026-07-29T09:32:55Z"
+  "sourceSha": "6d9f368d5aa33e74a98c20db3b4e29ceaf9b975d",
+  "verify": "success",
+  "build": "success",
+  "serverImage": "ghcr.io/balkhaev/trader-server:sha-6d9f368d5aa33e74a98c20db3b4e29ceaf9b975d",
+  "webImage": "ghcr.io/balkhaev/trader-web:sha-6d9f368d5aa33e74a98c20db3b4e29ceaf9b975d",
+  "reportedAt": "2026-07-29T09:38:32Z"
 }
