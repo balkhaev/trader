@@ -31,12 +31,12 @@ export const autoTradingConfig = pgTable(
       scale: 2,
     }).default("0"),
     allowedSources: jsonb("allowed_sources")
-      .$type<string[]>()
+      .$type<readonly string[]>()
       .default(["webhook"]),
     allowedSymbols: jsonb("allowed_symbols")
-      .$type<string[]>()
+      .$type<readonly string[]>()
       .default(["WIFUSDT", "DOTUSDT"]),
-    blockedSymbols: jsonb("blocked_symbols").$type<string[]>(),
+    blockedSymbols: jsonb("blocked_symbols").$type<readonly string[]>(),
     allowLong: boolean("allow_long").default(true).notNull(),
     allowShort: boolean("allow_short").default(false).notNull(),
     positionSizeType: text("position_size_type")

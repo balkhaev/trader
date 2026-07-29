@@ -1,27 +1,27 @@
 import { BinanceExchangeService } from "./binance";
-import { BybitExchangeService } from "./bybit";
-import type {
-  ExchangeCredentials,
-  ExchangeService,
-  ExchangeType,
-} from "./types";
+import type { ExchangeCredentials, ExchangeService } from "./types";
 
 export { BinanceExchangeService } from "./binance";
-export { BybitExchangeService } from "./bybit";
-export * from "./types";
+export type {
+  AccountInfo,
+  Balance,
+  ExchangeCredentials,
+  ExchangePreflight,
+  ExchangeService,
+  ExchangeType,
+  Income,
+  Order,
+  OrderParams,
+  Position,
+  Trade,
+} from "./types";
 
 export function createExchangeService(
-  exchange: ExchangeType,
+  exchange: "binance",
   credentials: ExchangeCredentials
 ): ExchangeService {
-  switch (exchange) {
-    case "binance":
-      return new BinanceExchangeService(credentials);
-    case "bybit":
-      return new BybitExchangeService(credentials);
-    case "tinkoff":
-      throw new Error("Tinkoff integration not implemented yet");
-    default:
-      throw new Error(`Unknown exchange: ${exchange}`);
+  if (exchange !== "binance") {
+    throw new Error("Consensus strategy supports Binance USD-M only");
   }
+  return new BinanceExchangeService(credentials);
 }

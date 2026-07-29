@@ -30,7 +30,7 @@ describe("Binance USD-M strategy adapter", () => {
         });
       }
       return json({ dualSidePosition: false });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const service = new BinanceExchangeService({
       apiKey: "key",
@@ -83,7 +83,7 @@ describe("Binance USD-M strategy adapter", () => {
         });
       }
       return json({});
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const service = new BinanceExchangeService({
       apiKey: "key",
@@ -108,7 +108,11 @@ describe("Binance USD-M strategy adapter", () => {
     ).toBe(true);
     expect(
       bodies
-        .filter((body) => body.includes("STOP_MARKET") || body.includes("TAKE_PROFIT_MARKET"))
+        .filter(
+          (body) =>
+            body.includes("STOP_MARKET") ||
+            body.includes("TAKE_PROFIT_MARKET")
+        )
         .every((body) => body.includes("closePosition=true"))
     ).toBe(true);
   });
@@ -129,7 +133,7 @@ describe("Binance USD-M strategy adapter", () => {
             ],
           },
         ],
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
     const service = new BinanceExchangeService({
       apiKey: "key",
       apiSecret: "secret",

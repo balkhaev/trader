@@ -1,5 +1,5 @@
 import { db, signal } from "@trader/db";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { autoTradingService } from "../auto-trading/auto-trading.service";
 import { consensusMarketService } from "./consensus-market.service";
 import {

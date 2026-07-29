@@ -1,7 +1,7 @@
 {
   "extends": "@trader/config/tsconfig.base.json",
   "compilerOptions": {
-    "composite": true,
+    "composite": false,
     "outDir": "dist",
     "baseUrl": ".",
     "paths": {
