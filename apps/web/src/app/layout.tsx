@@ -16,9 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WIF + DOT Strategy Terminal",
+  title: "Trader — автоторговля WIF и DOT",
   description:
-    "Операционный терминал Consensus WIF + DOT Risk Accelerator для Binance USD-M",
+    "Запуск автоматической торговли WIF и DOT в Paper или через Binance.",
 };
 
 export default function RootLayout({

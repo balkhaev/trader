@@ -34,6 +34,7 @@ export interface AutoTradingStats {
 }
 
 export interface ExecutionPreflight {
+  mode: "paper" | "exchange";
   ready: boolean;
   checks: {
     config: boolean;
@@ -51,6 +52,8 @@ export interface ExecutionPreflight {
   equity?: number;
   positions?: number;
 }
+
+export type ExecutionMode = ExecutionPreflight["mode"];
 
 async function fetchWithAuth<T>(endpoint: string, options?: RequestInit) {
   const response = await fetch(`${API_URL}${endpoint}`, {
@@ -111,6 +114,40 @@ export function useToggleAutoTrading() {
     mutationFn: () =>
       fetchWithAuth<{ success: boolean; enabled: boolean }>(
         "/api/auto-trading/toggle",
+        { method: "POST" }
+      ),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["auto-trading"] }),
+  });
+}
+
+export function useStartAutoTrading() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { mode: ExecutionMode; exchangeAccountId?: string }) =>
+      fetchWithAuth<{
+        success: boolean;
+        mode: ExecutionMode;
+        config: AutoTradingConfig;
+        preflight: ExecutionPreflight;
+      }>("/api/auto-trading/start", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["auto-trading"] });
+      client.invalidateQueries({ queryKey: ["strategy"] });
+      client.invalidateQueries({ queryKey: ["signals"] });
+      client.invalidateQueries({ queryKey: ["exchange"] });
+    },
+  });
+}
+
+export function useStopAutoTrading() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      fetchWithAuth<{ success: boolean; enabled: boolean }>(
+        "/api/auto-trading/stop",
         { method: "POST" }
       ),
     onSuccess: () => client.invalidateQueries({ queryKey: ["auto-trading"] }),

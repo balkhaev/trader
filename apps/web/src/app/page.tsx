@@ -3,290 +3,478 @@
 import {
   Activity,
   ArrowRight,
+  Bot,
   CheckCircle2,
-  CircleDollarSign,
-  Clock3,
-  Gauge,
-  RadioTower,
-  ShieldAlert,
+  KeyRound,
+  Play,
   ShieldCheck,
-  TriangleAlert,
+  Square,
   WalletCards,
-  Waves,
-  Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { PageLoading, StatItem, StatRow } from "@/components/layout";
+import { useState } from "react";
+import { toast } from "sonner";
+import { PageLoading } from "@/components/layout";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { TerminalPanel } from "@/components/ui/terminal-panel";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
+import {
+  type ExecutionMode,
   useAutoTradingConfig,
   useAutoTradingLogs,
   useAutoTradingStats,
   useExecutionPreflight,
+  useStartAutoTrading,
+  useStopAutoTrading,
 } from "@/hooks/use-auto-trading";
-import { useExchangeOverview } from "@/hooks/use-exchange";
-import { useClosedSignals, useSignals } from "@/hooks/use-signals";
-import { useCanonicalStrategy, useStrategyStatus } from "@/hooks/use-strategy";
+import {
+  useAddExchangeAccount,
+  useExchangeAccounts,
+} from "@/hooks/use-exchange";
+import { cn } from "@/lib/utils";
 
-function strategyOnly<T extends { metadata: Record<string, unknown> | null }>(
-  rows: T[] | undefined
-) {
-  return (rows ?? []).filter(
-    (row) => row.metadata?.strategyKind === "consensus_wif_dot_v1"
-  );
+const LOG_LABELS: Record<string, string> = {
+  executed: "Сделка открыта",
+  closed: "Сделка закрыта",
+  skipped: "Сигнал пропущен",
+  error: "Ошибка",
+};
+
+function money(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+  return new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
-function Dot({ active }: { active: boolean }) {
+function PendingLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span
-      className={`inline-flex size-2 rounded-full ${
-        active ? "bg-primary" : "bg-muted-foreground/40"
-      }`}
-    />
+    <>
+      <Spinner data-icon="inline-start" />
+      {children}
+    </>
   );
 }
 
-export default function StrategyTerminalPage() {
-  const strategy = useCanonicalStrategy();
-  const scheduler = useStrategyStatus();
-  const execution = useAutoTradingConfig();
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: The home page intentionally owns the two exclusive launch and running states.
+export default function TradingHomePage() {
+  const config = useAutoTradingConfig();
   const preflight = useExecutionPreflight();
   const stats = useAutoTradingStats();
-  const logs = useAutoTradingLogs(10);
-  const signals = useSignals({ limit: 200 });
-  const closed = useClosedSignals({ limit: 200 });
-  const overview = useExchangeOverview();
+  const logs = useAutoTradingLogs(5);
+  const accounts = useExchangeAccounts();
+  const addAccount = useAddExchangeAccount();
+  const start = useStartAutoTrading();
+  const stop = useStopAutoTrading();
+  const [apiKey, setApiKey] = useState("");
+  const [apiSecret, setApiSecret] = useState("");
+  const [testnet, setTestnet] = useState(true);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  if (strategy.isLoading || execution.isLoading || !strategy.data || !execution.data) {
+  const launch = async (mode: ExecutionMode, exchangeAccountId?: string) => {
+    setFormError(null);
+    try {
+      await start.mutateAsync({ mode, exchangeAccountId });
+      toast.success(
+        mode === "paper" ? "Paper-торговля запущена" : "Binance подключён"
+      );
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Не удалось запустить"
+      );
+    }
+  };
+
+  const connectAndLaunch = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError(null);
+    try {
+      const account = await addAccount.mutateAsync({
+        exchange: "binance",
+        name: testnet ? "Binance Testnet" : "Binance Live",
+        apiKey: apiKey.trim(),
+        apiSecret: apiSecret.trim(),
+        testnet,
+      });
+      await start.mutateAsync({
+        mode: "exchange",
+        exchangeAccountId: account.id,
+      });
+      setApiKey("");
+      setApiSecret("");
+      toast.success("Binance подключён, торговля запущена");
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Не удалось подключить Binance"
+      );
+    }
+  };
+
+  if (config.isLoading || accounts.isLoading || !config.data) {
     return (
-      <div className="p-3 sm:p-4">
-        <PageLoading count={10} variant="cards" />
+      <div className="p-4 sm:p-6">
+        <PageLoading count={2} variant="cards" />
       </div>
     );
   }
 
-  const config = strategy.data.config;
-  const runtime = config.runtime;
-  const equity = runtime?.equity ?? preflight.data?.equity ?? 0;
-  const initial = runtime?.initialEquity ?? equity;
-  const highWater = runtime?.highWaterEquity ?? equity;
-  const returnPercent = initial > 0 ? (equity / initial - 1) * 100 : 0;
-  const drawdown = highWater > 0 ? Math.max(0, (1 - equity / highWater) * 100) : 0;
-  const all = strategyOnly(signals.data);
-  const closedTrades = strategyOnly(closed.data);
-  const pending = all.filter((item) => item.status === "pending").length;
-  const open = all.filter(
-    (item) => item.status === "executed" && !item.exitPrice
-  ).length;
-  const wins = closedTrades.filter((item) => item.isWin).length;
-  const account = overview.data?.accounts.at(0);
-  const schedulerState = scheduler.data?.scheduler;
-
-  return (
-    <div className="p-3 sm:p-4">
-      <section className="strategy-grid overflow-hidden rounded-2xl border bg-card/80">
-        <div className="grid lg:grid-cols-[1.35fr_0.65fr]">
-          <div className="p-5 sm:p-7">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={strategy.data.isActive ? "default" : "secondary"}>
-                {strategy.data.isActive ? "STRATEGY ACTIVE" : "STRATEGY PAUSED"}
+  if (config.data.enabled) {
+    const mode =
+      preflight.data?.mode ??
+      (config.data.exchangeAccountId ? "exchange" : "paper");
+    const isPaper = mode === "paper";
+    return (
+      <div className="mx-auto max-w-5xl p-4 sm:p-6 lg:py-10">
+        <section aria-labelledby="running-title" className="space-y-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <Badge variant="secondary">
+                <Activity data-icon="inline-start" />
+                {isPaper
+                  ? "Paper"
+                  : (preflight.data?.account?.name ?? "Binance")}
               </Badge>
-              <Badge variant={execution.data.enabled ? "default" : "outline"}>
-                {execution.data.enabled ? "EXECUTION ARMED" : "EXECUTION OFF"}
-              </Badge>
-              <Badge variant={preflight.data?.ready ? "default" : "destructive"}>
-                PREFLIGHT {preflight.data?.ready ? "READY" : "BLOCKED"}
-              </Badge>
-              <Badge variant="outline">
-                {(runtime?.mode ?? "base").toUpperCase()}
-              </Badge>
+              <h1
+                className="mt-3 font-semibold text-2xl tracking-tight"
+                id="running-title"
+              >
+                Торговля запущена
+              </h1>
+              <p className="mt-2 max-w-2xl text-muted-foreground text-sm">
+                Бот проверяет WIF и DOT каждые 15 минут и сам управляет
+                сделками.
+                {isPaper
+                  ? " Реальные деньги не используются."
+                  : " Ордера отправляются в Binance."}
+              </p>
             </div>
-            <h1 className="mt-5 max-w-4xl font-semibold text-3xl tracking-tight sm:text-5xl">
-              Consensus WIF + DOT
-              <span className="block text-primary">Risk Accelerator Terminal</span>
-            </h1>
-            <p className="mt-4 max-w-3xl text-muted-foreground text-sm leading-6 sm:text-base">
-              Strategy-only runtime: WIF OI-flush, DOT negative-funding rebound,
-              Binance USD-M preflight и закрытая equity как единственный источник
-              risk mode.
-            </p>
-            <div className="mt-6 flex flex-wrap gap-2">
-              <Link href="/strategy-builder">
-                <Button><Gauge className="mr-1 size-4" /> Blueprint</Button>
-              </Link>
-              <Link href="/signals">
-                <Button variant="outline"><RadioTower className="mr-1 size-4" /> Signals</Button>
-              </Link>
-              <Link href="/auto-trading">
-                <Button variant="outline"><Activity className="mr-1 size-4" /> Execution</Button>
-              </Link>
-              <Link href="/validation">
-                <Button variant="ghost">Forward gate <ArrowRight className="ml-1 size-4" /></Button>
-              </Link>
+            <Button
+              disabled={stop.isPending}
+              onClick={async () => {
+                await stop.mutateAsync();
+                toast.success("Новые сделки остановлены");
+              }}
+              variant="outline"
+            >
+              {stop.isPending ? (
+                <PendingLabel>Останавливаем…</PendingLabel>
+              ) : (
+                <>
+                  <Square data-icon="inline-start" />
+                  Остановить
+                </>
+              )}
+            </Button>
+          </div>
+
+          <div className="grid gap-px bg-border sm:grid-cols-3">
+            <div className="bg-card p-4">
+              <p className="text-muted-foreground text-xs">Баланс</p>
+              <p className="mt-1 font-mono font-semibold text-xl">
+                {money(preflight.data?.equity)}
+              </p>
+            </div>
+            <div className="bg-card p-4">
+              <p className="text-muted-foreground text-xs">Открыто позиций</p>
+              <p className="mt-1 font-mono font-semibold text-xl">
+                {preflight.data?.positions ?? 0}
+              </p>
+            </div>
+            <div className="bg-card p-4">
+              <p className="text-muted-foreground text-xs">Сделок сегодня</p>
+              <p className="mt-1 font-mono font-semibold text-xl">
+                {stats.data?.todayExecuted ?? 0}
+              </p>
             </div>
           </div>
 
-          <div className="border-border/70 border-t bg-background/45 p-5 lg:border-t-0 lg:border-l sm:p-7">
-            <div className="text-[10px] text-muted-foreground uppercase tracking-widest">
-              Closed equity
-            </div>
-            <div className="mt-2 font-mono text-4xl">
-              {equity
-                ? `${equity.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} USDT`
-                : "—"}
-            </div>
-            <div className="mt-6 grid grid-cols-2 gap-2">
-              <div className="rounded-xl border bg-card/60 p-3">
-                <div className="text-[9px] text-muted-foreground uppercase">Return</div>
-                <div className={`mt-1 font-mono text-xl ${returnPercent >= 0 ? "text-primary" : "text-destructive"}`}>
-                  {returnPercent >= 0 ? "+" : ""}{returnPercent.toFixed(2)}%
-                </div>
-              </div>
-              <div className="rounded-xl border bg-card/60 p-3">
-                <div className="text-[9px] text-muted-foreground uppercase">Drawdown</div>
-                <div className="mt-1 font-mono text-xl">{drawdown.toFixed(2)}%</div>
-              </div>
-            </div>
-            <div className="mt-4 space-y-2 font-mono text-[10px] text-muted-foreground">
-              <State label="Strategy" active={strategy.data.isActive} value={strategy.data.isActive ? "active" : "paused"} />
-              <State label="Execution" active={execution.data.enabled} value={execution.data.enabled ? "armed" : "off"} />
-              <State label="Scheduler" active={Boolean(schedulerState?.enabled)} value={schedulerState?.enabled ? schedulerState.nextRunAt ? new Date(schedulerState.nextRunAt).toLocaleTimeString("ru-RU") : "running" : "opt-in disabled"} />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <StatRow className="mt-4 md:grid-cols-6">
-        <StatItem label="Risk mode" value={(runtime?.mode ?? "base").toUpperCase()} />
-        <StatItem label="Pending" value={pending} />
-        <StatItem label="Open" value={open} />
-        <StatItem label="Closed" value={closedTrades.length} />
-        <StatItem label="Win rate" value={closedTrades.length ? `${((wins / closedTrades.length) * 100).toFixed(1)}%` : "—"} />
-        <StatItem label="Errors today" value={stats.data?.todayErrors ?? 0} />
-      </StatRow>
-
-      <div className="mt-4 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Module
-            icon={Waves}
-            subtitle="Tue / Fri / Sun · 15m"
-            title="WIF OI Flush Reclaim"
-            values={[
-              [`${config.wif.stopAtr} ATR`, "stop"],
-              [`${config.wif.targetR}R`, "target"],
-              [`${config.wif.maxHoldMinutes}m`, "exit"],
-            ]}
-            risk={`${config.risk.baseWifRiskPercent}% / ${config.risk.boostWifRiskPercent}%`}
-          />
-          <Module
-            icon={CircleDollarSign}
-            subtitle="Published negative funding"
-            title="DOT Funding Rebound"
-            values={[
-              [`${config.dot.stopAtr} ATR`, "stop"],
-              [`${config.dot.targetR}R`, "target"],
-              [`${config.dot.maxHoldMinutes / 60}h`, "exit"],
-            ]}
-            risk={`${config.risk.baseDotRiskPercent}% / ${config.risk.boostDotRiskPercent}%`}
-          />
-          <TerminalPanel title="Risk Accelerator">
-            <div className="grid grid-cols-3 gap-2 p-4 text-center">
-              <Risk icon={Zap} label="boost" value={`+${config.risk.boostTriggerProfitPercent}%`} />
-              <Risk icon={ShieldCheck} label="de-risk" value={`−${config.risk.deRiskDrawdownPercent}%`} />
-              <Risk icon={ShieldAlert} label="stop" value={`−${config.risk.hardStopDrawdownPercent}%`} />
-            </div>
-          </TerminalPanel>
-          <TerminalPanel title="Binance USD-M">
-            <div className="space-y-3 p-4">
-              <div className="flex items-center gap-3">
-                <WalletCards className="size-5 text-primary" />
-                <div>
-                  <p className="text-sm">{account?.accountName ?? "Not connected"}</p>
-                  <p className="text-muted-foreground text-xs">
-                    {account ? `${account.testnet ? "TESTNET" : "LIVE"} · ${account.positionsCount} positions` : "Connect Binance testnet"}
-                  </p>
-                </div>
-              </div>
-              <div className="font-mono text-xs text-muted-foreground">
-                Gross cap {config.execution.maxGrossLeverage}x · cost reserve {config.execution.roundTurnCostBps} bps
-              </div>
-            </div>
-          </TerminalPanel>
-        </div>
-
-        <TerminalPanel subtitle="latest decisions" title="Execution Feed">
-          <div className="max-h-[560px] overflow-y-auto">
-            {logs.data?.logs.length ? (
-              logs.data.logs.map((log) => (
-                <div className="grid grid-cols-[auto_1fr_auto] gap-3 border-border/60 border-b p-3 last:border-0" key={log.id}>
-                  {log.action === "error" ? (
-                    <TriangleAlert className="mt-1 size-4 text-destructive" />
-                  ) : log.action === "skipped" ? (
-                    <Clock3 className="mt-1 size-4 text-yellow-500" />
-                  ) : (
-                    <CheckCircle2 className="mt-1 size-4 text-primary" />
-                  )}
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={log.action === "error" ? "destructive" : "secondary"}>{log.action}</Badge>
-                      {log.details?.symbol ? <span className="font-mono text-xs">{String(log.details.symbol)}</span> : null}
+          <Card>
+            <CardHeader>
+              <CardTitle>Последние события</CardTitle>
+              <CardDescription>
+                Здесь появятся открытия, закрытия и ошибки.
+              </CardDescription>
+              <CardAction>
+                <Link
+                  className={buttonVariants({ size: "sm", variant: "ghost" })}
+                  href="/auto-trading"
+                >
+                  Настройки
+                  <ArrowRight data-icon="inline-end" />
+                </Link>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              {logs.data?.logs.length ? (
+                <div className="divide-y">
+                  {logs.data.logs.map((log) => (
+                    <div
+                      className="flex items-start justify-between gap-4 py-3"
+                      key={log.id}
+                    >
+                      <div>
+                        <p className="font-medium">{LOG_LABELS[log.action]}</p>
+                        <p className="mt-0.5 text-muted-foreground">
+                          {log.reason}
+                        </p>
+                      </div>
+                      <time className="shrink-0 font-mono text-muted-foreground text-xs">
+                        {new Date(log.createdAt).toLocaleTimeString("ru-RU", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </time>
                     </div>
-                    <p className="mt-1 text-muted-foreground text-xs">{log.reason}</p>
-                  </div>
-                  <span className="font-mono text-[10px] text-muted-foreground">{new Date(log.createdAt).toLocaleTimeString("ru-RU")}</span>
+                  ))}
                 </div>
-              ))
-            ) : (
-              <div className="py-16 text-center text-muted-foreground text-sm">
-                Execution feed пуст.
+              ) : (
+                <div className="py-8 text-center text-muted-foreground">
+                  Первый сигнал появится здесь автоматически.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+      </div>
+    );
+  }
+
+  const enabledAccounts = (accounts.data ?? []).filter(
+    (account) => account.enabled
+  );
+  const busy = start.isPending || addAccount.isPending;
+
+  return (
+    <div className="mx-auto max-w-5xl p-4 sm:p-6 lg:py-10">
+      <section aria-labelledby="start-title">
+        <div className="max-w-2xl">
+          <Badge variant="outline">
+            <Bot data-icon="inline-start" />
+            Автоторговля
+          </Badge>
+          <h1
+            className="mt-3 font-semibold text-2xl tracking-tight sm:text-3xl"
+            id="start-title"
+          >
+            Как будем торговать?
+          </h1>
+          <p className="mt-2 text-muted-foreground text-sm sm:text-base">
+            Начните без риска в Paper или подключите Binance. Стратегия и
+            ограничения уже настроены.
+          </p>
+        </div>
+
+        {formError ? (
+          <Alert className="mt-6" variant="destructive">
+            <AlertTitle>Не удалось запустить</AlertTitle>
+            <AlertDescription>{formError}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
+          <Card className="min-h-full">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <WalletCards className="size-4 text-primary" />
+                Paper
+              </CardTitle>
+              <CardDescription>
+                Без ключей, без пополнения и без риска.
+              </CardDescription>
+              <CardAction>
+                <Badge variant="secondary">Рекомендуется</Badge>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="border bg-muted/30 p-4">
+                <p className="text-muted-foreground text-xs">
+                  Виртуальный баланс
+                </p>
+                <p className="mt-1 font-mono font-semibold text-2xl">$10 000</p>
               </div>
+              <ul className="space-y-3 text-sm">
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+                  Реальные котировки WIF и DOT
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+                  Виртуальные позиции и честный P&amp;L с комиссиями
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+                  Можно остановить в любой момент
+                </li>
+              </ul>
+            </CardContent>
+            <CardFooter>
+              <Button
+                className="w-full"
+                disabled={busy}
+                onClick={() => launch("paper")}
+                size="lg"
+              >
+                {start.isPending ? (
+                  <PendingLabel>Запускаем…</PendingLabel>
+                ) : (
+                  <>
+                    <Play data-icon="inline-start" />
+                    Запустить Paper
+                  </>
+                )}
+              </Button>
+            </CardFooter>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <KeyRound className="size-4 text-primary" />
+                Binance
+              </CardTitle>
+              <CardDescription>
+                Бот проверит ключи и только потом включит торговлю.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {enabledAccounts.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="font-medium">Уже подключено</p>
+                  {enabledAccounts.map((account) => (
+                    <Button
+                      className="w-full justify-between"
+                      disabled={busy}
+                      key={account.id}
+                      onClick={() => launch("exchange", account.id)}
+                      variant="outline"
+                    >
+                      <span>{account.name}</span>
+                      <span className="text-muted-foreground">
+                        {account.testnet ? "Testnet" : "Live"}
+                      </span>
+                    </Button>
+                  ))}
+                  <Separator className="my-5" />
+                  <p className="font-medium">Другой аккаунт</p>
+                </div>
+              ) : null}
+
+              <form className="mt-4" onSubmit={connectAndLaunch}>
+                <FieldGroup>
+                  <Field data-invalid={Boolean(formError)}>
+                    <FieldLabel htmlFor="binance-api-key">API key</FieldLabel>
+                    <Input
+                      autoCapitalize="none"
+                      autoComplete="off"
+                      id="binance-api-key"
+                      name="apiKey"
+                      onChange={(event) => setApiKey(event.target.value)}
+                      required
+                      spellCheck={false}
+                      value={apiKey}
+                    />
+                  </Field>
+                  <Field data-invalid={Boolean(formError)}>
+                    <FieldLabel htmlFor="binance-api-secret">
+                      Secret key
+                    </FieldLabel>
+                    <Input
+                      autoCapitalize="none"
+                      autoComplete="new-password"
+                      id="binance-api-secret"
+                      name="apiSecret"
+                      onChange={(event) => setApiSecret(event.target.value)}
+                      required
+                      spellCheck={false}
+                      type="password"
+                      value={apiSecret}
+                    />
+                    <FieldError>{formError}</FieldError>
+                  </Field>
+                  <Field orientation="horizontal">
+                    <FieldLabel htmlFor="binance-testnet">
+                      <span>
+                        Testnet
+                        <FieldDescription>
+                          Тестовый аккаунт Binance Futures.
+                        </FieldDescription>
+                      </span>
+                    </FieldLabel>
+                    <Switch
+                      checked={testnet}
+                      id="binance-testnet"
+                      onCheckedChange={setTestnet}
+                    />
+                  </Field>
+                </FieldGroup>
+
+                <Alert className="mt-5">
+                  <ShieldCheck />
+                  <AlertTitle>Ключи зашифрованы</AlertTitle>
+                  <AlertDescription>
+                    Нужны только Futures и Trading. Никогда не включайте вывод
+                    средств.
+                  </AlertDescription>
+                </Alert>
+
+                <Button
+                  className="mt-5 w-full"
+                  disabled={busy}
+                  size="lg"
+                  type="submit"
+                >
+                  {busy ? (
+                    <PendingLabel>Проверяем ключи…</PendingLabel>
+                  ) : (
+                    <>
+                      <Play data-icon="inline-start" />
+                      Подключить и запустить
+                    </>
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+
+        <p className="mt-5 text-center text-muted-foreground text-xs">
+          Расширенные лимиты и диагностика доступны в{" "}
+          <Link
+            className={cn(
+              "underline underline-offset-4",
+              "hover:text-foreground"
             )}
-          </div>
-        </TerminalPanel>
-      </div>
-    </div>
-  );
-}
-
-function State({ label, active, value }: { label: string; active: boolean; value: string }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span>{label}</span>
-      <span className="flex items-center gap-2"><Dot active={active} />{value}</span>
-    </div>
-  );
-}
-
-function Module({ icon: Icon, title, subtitle, values, risk }: { icon: React.ComponentType<{ className?: string }>; title: string; subtitle: string; values: Array<[string, string]>; risk: string }) {
-  return (
-    <TerminalPanel subtitle={subtitle} title={title}>
-      <div className="space-y-4 p-4">
-        <Icon className="size-5 text-primary" />
-        <div className="grid grid-cols-3 gap-2 text-center">
-          {values.map(([value, label]) => (
-            <div className="rounded-lg border bg-background/40 p-2" key={label}>
-              <div className="font-mono">{value}</div>
-              <div className="text-[9px] text-muted-foreground uppercase">{label}</div>
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-between border-border/60 border-t pt-3 text-xs">
-          <span className="text-muted-foreground">Base / boost risk</span>
-          <span className="font-mono">{risk}</span>
-        </div>
-      </div>
-    </TerminalPanel>
-  );
-}
-
-function Risk({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string }) {
-  return (
-    <div className="rounded-xl border bg-background/40 p-3">
-      <Icon className="mx-auto size-4 text-primary" />
-      <div className="mt-2 font-mono text-lg">{value}</div>
-      <div className="text-[9px] text-muted-foreground uppercase">{label}</div>
+            href="/auto-trading"
+          >
+            настройках
+          </Link>
+          .
+        </p>
+      </section>
     </div>
   );
 }

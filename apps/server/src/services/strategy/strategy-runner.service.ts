@@ -47,29 +47,36 @@ async function findByDedupeKey(userId: string, dedupeKey: string) {
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: The scan is an ordered strategy pipeline with explicit execution gates.
 async function scanUserUnlocked(userId: string, options: ScanOptions) {
   const strategyRecord = await strategyService.getActiveByUser(userId);
   if (!strategyRecord) {
-    return { scanned: false, reason: "No active canonical strategy", signals: [] };
+    return {
+      scanned: false,
+      reason: "No active canonical strategy",
+      signals: [],
+    };
   }
 
   let context = await autoTradingService
     .getExecutionContext(userId)
     .catch(() => null);
-  if (context) {
-    await autoTradingService
-      .closeExpiredStrategySignals(userId, context)
-      .catch(() => undefined);
-    context = await autoTradingService
-      .getExecutionContext(userId)
-      .catch(() => null);
-  }
+  await autoTradingService
+    .closeExpiredStrategySignals(userId, context ?? undefined)
+    .catch(() => undefined);
+  context = await autoTradingService
+    .getExecutionContext(userId)
+    .catch(() => null);
+  const paperPortfolio = context
+    ? null
+    : await autoTradingService.getPaperPortfolioState(userId);
 
   const market = await consensusMarketService.scan(options.now);
   const runtime = strategyRecord.config.runtime;
   const fallbackEquity = runtime?.equity ?? runtime?.initialEquity ?? 10_000;
-  const equity = context?.equity ?? fallbackEquity;
-  const openGrossNotional = context?.openGrossNotional ?? 0;
+  const equity = context?.equity ?? paperPortfolio?.equity ?? fallbackEquity;
+  const openGrossNotional =
+    context?.openGrossNotional ?? paperPortfolio?.openGrossNotional ?? 0;
   const evaluation = consensusWifDotService.evaluate({
     config: strategyRecord.config,
     state: stateFromRuntime(runtime, equity),
@@ -138,7 +145,9 @@ async function scanUserUnlocked(userId: string, options: ScanOptions) {
       })
       .returning();
 
-    if (!createdSignal) continue;
+    if (!createdSignal) {
+      continue;
+    }
     let executed = false;
     let executionReason: string | undefined;
     if (options.execute ?? false) {

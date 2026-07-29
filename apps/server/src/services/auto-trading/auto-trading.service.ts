@@ -18,6 +18,7 @@ import {
   type StrategySignalPlan,
 } from "../strategy/consensus-wif-dot.service";
 import { strategyService } from "../strategy/strategy.service";
+import { calculatePaperPnl } from "./paper-trading";
 
 type Signal = InferSelectModel<typeof signal>;
 type AutoTradingConfig = InferSelectModel<typeof autoTradingConfig>;
@@ -25,6 +26,12 @@ type ExchangeAccount = InferSelectModel<typeof exchangeAccount>;
 
 const STRATEGY_SYMBOLS = new Set(["WIFUSDT", "DOTUSDT"]);
 const DEFAULT_COST_BPS = 20;
+const PAPER_INITIAL_EQUITY = 10_000;
+const publicMarketService = createExchangeService("binance", {
+  apiKey: "",
+  apiSecret: "",
+  testnet: false,
+});
 
 interface AutoTradeResult {
   executed: boolean;
@@ -43,6 +50,7 @@ export interface AutoTradingExecutionContext {
 }
 
 export interface AutoTradingPreflight {
+  mode: "paper" | "exchange";
   ready: boolean;
   checks: {
     config: boolean;
@@ -68,6 +76,21 @@ interface ConsensusSignalMetadata {
   strategySignal: StrategySignalPlan;
   positionPreview?: PositionPlan;
   positionPlan?: PositionPlan & { quantity?: number };
+  paperTrade?: boolean;
+  paperPnlUsdt?: number;
+}
+
+export interface PaperTradingPortfolio {
+  equity: number;
+  openGrossNotional: number;
+  positions: Array<{
+    signalId: string;
+    symbol: string;
+    entryPrice: number;
+    currentPrice: number;
+    quantity: number;
+    unrealizedPnl: number;
+  }>;
 }
 
 function metadataOf(sig: Signal): ConsensusSignalMetadata | null {
@@ -122,9 +145,70 @@ function fixedConfigDefaults(userId: string) {
   } as const;
 }
 
-function firstPositivePrice(...values: Array<string | undefined>): string | null {
+function firstPositivePrice(
+  ...values: Array<string | undefined>
+): string | null {
   const found = values.find((value) => Number(value) > 0);
   return found ?? null;
+}
+
+async function getPaperPortfolio(
+  userId: string
+): Promise<PaperTradingPortfolio> {
+  const [strategyRecord, rows] = await Promise.all([
+    strategyService.getActiveByUser(userId),
+    db
+      .select()
+      .from(signal)
+      .where(eq(signal.userId, userId))
+      .orderBy(desc(signal.createdAt))
+      .limit(2000),
+  ]);
+  const paperRows = rows.flatMap((item) => {
+    const metadata = metadataOf(item);
+    return metadata?.paperTrade ? [{ item, metadata }] : [];
+  });
+  const initialEquity =
+    strategyRecord?.config.runtime?.initialEquity ?? PAPER_INITIAL_EQUITY;
+  const realizedPnl = paperRows.reduce((sum, { item, metadata }) => {
+    if (!item.exitPrice) {
+      return sum;
+    }
+    return sum + (metadata.paperPnlUsdt ?? 0);
+  }, 0);
+  const openRows = paperRows.filter(
+    ({ item }) => item.status === "executed" && !item.exitPrice
+  );
+  const prices = await Promise.all(
+    openRows.map(async ({ item, metadata }) => {
+      const entryPrice = Number(item.entryPrice);
+      const currentPrice = Number(
+        await publicMarketService
+          .getPrice(item.symbol)
+          .catch(() => item.entryPrice ?? "0")
+      );
+      const quantity = Number(metadata.positionPlan?.quantity ?? 0);
+      return {
+        signalId: item.id,
+        symbol: item.symbol,
+        entryPrice,
+        currentPrice,
+        quantity,
+        unrealizedPnl: (currentPrice - entryPrice) * quantity,
+      };
+    })
+  );
+  return {
+    equity:
+      initialEquity +
+      realizedPnl +
+      prices.reduce((sum, item) => sum + item.unrealizedPnl, 0),
+    openGrossNotional: prices.reduce(
+      (sum, item) => sum + item.currentPrice * item.quantity,
+      0
+    ),
+    positions: prices,
+  };
 }
 
 async function cancelSymbolOrders(
@@ -152,12 +236,17 @@ async function resolveExitPrice(
     closingOrder?.avgPrice,
     closingOrder?.price
   );
-  if (fromOrder) return fromOrder;
+  if (fromOrder) {
+    return fromOrder;
+  }
   const executedAt = item.executedAt ?? item.createdAt;
-  const trades = (await service.getTradeHistory(item.symbol, 100).catch(() => []))
+  const trades = (
+    await service.getTradeHistory(item.symbol, 100).catch(() => [])
+  )
     .filter(
       (trade) =>
-        trade.side === "sell" && trade.executedAt.getTime() >= executedAt.getTime()
+        trade.side === "sell" &&
+        trade.executedAt.getTime() >= executedAt.getTime()
     )
     .sort((a, b) => a.executedAt.getTime() - b.executedAt.getTime());
   const quantity = trades.reduce(
@@ -206,6 +295,160 @@ async function resolveNetPnlPercent(
   };
 }
 
+function emptyPreflightChecks(
+  hasConfig: boolean
+): AutoTradingPreflight["checks"] {
+  return {
+    config: hasConfig,
+    account: false,
+    venue: false,
+    liveAllowed: false,
+    canTrade: false,
+    oneWayMode: false,
+    positionsSafe: false,
+    strategyActive: false,
+    riskState: false,
+  };
+}
+
+async function getPaperPreflight(
+  userId: string,
+  hasConfig: boolean
+): Promise<AutoTradingPreflight> {
+  const [activeStrategy, portfolio] = await Promise.all([
+    strategyService.getActiveByUser(userId),
+    getPaperPortfolio(userId),
+  ]);
+  const checks = emptyPreflightChecks(hasConfig);
+  Object.assign(checks, {
+    account: true,
+    venue: true,
+    liveAllowed: true,
+    canTrade: true,
+    oneWayMode: true,
+    positionsSafe: portfolio.positions.length <= 2,
+    strategyActive: Boolean(activeStrategy),
+    riskState: activeStrategy?.config.runtime?.mode !== "stopped",
+  });
+  const reasons = [
+    ...(checks.positionsSafe ? [] : ["Paper position limit reached"]),
+    ...(checks.strategyActive ? [] : ["Canonical strategy is not active"]),
+    ...(checks.riskState ? [] : ["Strategy hard-stop is active"]),
+  ];
+  return {
+    mode: "paper",
+    ready: Object.values(checks).every(Boolean),
+    checks,
+    reasons,
+    equity: portfolio.equity,
+    positions: portfolio.positions.length,
+  };
+}
+
+function accountSummary(account: ExchangeAccount) {
+  return { id: account.id, name: account.name, testnet: account.testnet };
+}
+
+async function inspectExchangePreflight(
+  userId: string,
+  account: ExchangeAccount,
+  checks: AutoTradingPreflight["checks"],
+  reasons: string[]
+): Promise<AutoTradingPreflight> {
+  try {
+    const service = createExchangeService("binance", {
+      apiKey: decrypt(account.apiKey),
+      apiSecret: decrypt(account.apiSecret),
+      testnet: account.testnet,
+    });
+    const [accountInfo, exchangePreflight, positions, activeStrategy] =
+      await Promise.all([
+        service.getAccountInfo(),
+        service.getPreflight?.(),
+        service.getPositions(),
+        strategyService.getActiveByUser(userId),
+      ]);
+    Object.assign(checks, {
+      canTrade:
+        accountInfo.canTrade !== false && exchangePreflight?.canTrade !== false,
+      oneWayMode: exchangePreflight?.oneWayMode === true,
+      positionsSafe:
+        positions.length <= 2 &&
+        positions.every(
+          (position) =>
+            STRATEGY_SYMBOLS.has(position.symbol) && position.side === "long"
+        ),
+      strategyActive: Boolean(activeStrategy),
+      riskState: activeStrategy?.config.runtime?.mode !== "stopped",
+    });
+    reasons.push(
+      ...(exchangePreflight?.messages ?? []),
+      ...(checks.positionsSafe
+        ? []
+        : ["Only long WIFUSDT/DOTUSDT positions may be open"]),
+      ...(checks.strategyActive ? [] : ["Canonical strategy is not active"]),
+      ...(checks.riskState ? [] : ["Strategy hard-stop is active"])
+    );
+    return {
+      mode: "exchange",
+      ready: Object.values(checks).every(Boolean),
+      checks,
+      reasons,
+      account: accountSummary(account),
+      equity: Number(accountInfo.totalBalance),
+      positions: positions.length,
+    };
+  } catch (error) {
+    reasons.push(error instanceof Error ? error.message : String(error));
+    return {
+      mode: "exchange",
+      ready: false,
+      checks,
+      reasons,
+      account: accountSummary(account),
+    };
+  }
+}
+
+async function getExchangePreflight(
+  userId: string,
+  config: AutoTradingConfig
+): Promise<AutoTradingPreflight> {
+  const checks = emptyPreflightChecks(true);
+  const reasons: string[] = [];
+  const [account] = await db
+    .select()
+    .from(exchangeAccount)
+    .where(
+      and(
+        eq(exchangeAccount.id, config.exchangeAccountId ?? ""),
+        eq(exchangeAccount.userId, userId)
+      )
+    );
+  checks.account = Boolean(account?.enabled);
+  checks.venue = account?.exchange === "binance";
+  checks.liveAllowed = Boolean(
+    account?.testnet || process.env.ALLOW_LIVE_TRADING === "true"
+  );
+  reasons.push(
+    ...(checks.account ? [] : ["Exchange account is unavailable"]),
+    ...(checks.venue ? [] : ["Binance USD-M is required"]),
+    ...(account && !checks.liveAllowed
+      ? ["Live execution is locked; use testnet or ALLOW_LIVE_TRADING=true"]
+      : [])
+  );
+  if (!(account && checks.account && checks.venue && checks.liveAllowed)) {
+    return {
+      mode: "exchange",
+      ready: false,
+      checks,
+      reasons,
+      account: account ? accountSummary(account) : undefined,
+    };
+  }
+  return inspectExchangePreflight(userId, account, checks, reasons);
+}
+
 export const autoTradingService = {
   async getConfig(userId: string): Promise<AutoTradingConfig | null> {
     const [config] = await db
@@ -228,7 +471,10 @@ export const autoTradingService = {
         .set({ ...updates, orderType: "market" })
         .where(eq(autoTradingConfig.userId, userId))
         .returning();
-      return updated!;
+      if (!updated) {
+        throw new Error("Failed to update auto-trading config");
+      }
+      return updated;
     }
     const [created] = await db
       .insert(autoTradingConfig)
@@ -239,105 +485,17 @@ export const autoTradingService = {
         orderType: "market",
       })
       .returning();
-    return created!;
+    if (!created) {
+      throw new Error("Failed to create auto-trading config");
+    }
+    return created;
   },
 
   async getPreflight(userId: string): Promise<AutoTradingPreflight> {
     const config = await this.getConfig(userId);
-    const reasons: string[] = [];
-    const checks: AutoTradingPreflight["checks"] = {
-      config: Boolean(config),
-      account: false,
-      venue: false,
-      liveAllowed: false,
-      canTrade: false,
-      oneWayMode: false,
-      positionsSafe: false,
-      strategyActive: false,
-      riskState: false,
-    };
-    if (!config?.exchangeAccountId) {
-      reasons.push("Select a Binance USD-M account");
-      return { ready: false, checks, reasons };
-    }
-
-    const [account] = await db
-      .select()
-      .from(exchangeAccount)
-      .where(
-        and(
-          eq(exchangeAccount.id, config.exchangeAccountId),
-          eq(exchangeAccount.userId, userId)
-        )
-      );
-    checks.account = Boolean(account?.enabled);
-    checks.venue = account?.exchange === "binance";
-    checks.liveAllowed = Boolean(
-      account?.testnet || process.env.ALLOW_LIVE_TRADING === "true"
-    );
-    if (!account?.enabled) reasons.push("Exchange account is unavailable");
-    if (account?.exchange !== "binance") reasons.push("Binance USD-M is required");
-    if (account && !checks.liveAllowed) {
-      reasons.push("Live execution is locked; use testnet or ALLOW_LIVE_TRADING=true");
-    }
-    if (!account || !checks.account || !checks.venue || !checks.liveAllowed) {
-      return {
-        ready: false,
-        checks,
-        reasons,
-        account: account
-          ? { id: account.id, name: account.name, testnet: account.testnet }
-          : undefined,
-      };
-    }
-
-    try {
-      const service = createExchangeService("binance", {
-        apiKey: decrypt(account.apiKey),
-        apiSecret: decrypt(account.apiSecret),
-        testnet: account.testnet,
-      });
-      const [accountInfo, exchangePreflight, positions, activeStrategy] =
-        await Promise.all([
-          service.getAccountInfo(),
-          service.getPreflight?.(),
-          service.getPositions(),
-          strategyService.getActiveByUser(userId),
-        ]);
-      checks.canTrade =
-        accountInfo.canTrade !== false && exchangePreflight?.canTrade !== false;
-      checks.oneWayMode = exchangePreflight?.oneWayMode === true;
-      checks.positionsSafe =
-        positions.length <= 2 &&
-        positions.every(
-          (position) =>
-            STRATEGY_SYMBOLS.has(position.symbol) && position.side === "long"
-        );
-      checks.strategyActive = Boolean(activeStrategy);
-      checks.riskState = activeStrategy?.config.runtime?.mode !== "stopped";
-      reasons.push(...(exchangePreflight?.messages ?? []));
-      if (!checks.positionsSafe) {
-        reasons.push("Only long WIFUSDT/DOTUSDT positions may be open");
-      }
-      if (!checks.strategyActive) reasons.push("Canonical strategy is not active");
-      if (!checks.riskState) reasons.push("Strategy hard-stop is active");
-      return {
-        ready: Object.values(checks).every(Boolean),
-        checks,
-        reasons,
-        account: { id: account.id, name: account.name, testnet: account.testnet },
-        equity: Number(accountInfo.totalBalance),
-        positions: positions.length,
-      };
-    } catch (error) {
-      reasons.push(error instanceof Error ? error.message : String(error));
-      return {
-        ready: false,
-        checks,
-        reasons,
-        account: { id: account.id, name: account.name, testnet: account.testnet },
-      };
-    }
+    return config?.exchangeAccountId
+      ? getExchangePreflight(userId, config)
+      : getPaperPreflight(userId, Boolean(config));
   },
 
   async getExecutionContext(
@@ -356,12 +514,16 @@ export const autoTradingService = {
           eq(exchangeAccount.userId, userId)
         )
       );
-    if (!account?.enabled) throw new Error("Exchange account is unavailable");
+    if (!account?.enabled) {
+      throw new Error("Exchange account is unavailable");
+    }
     if (account.exchange !== "binance") {
       throw new Error("Consensus strategy requires Binance USD-M");
     }
     if (!account.testnet && process.env.ALLOW_LIVE_TRADING !== "true") {
-      throw new Error("Live execution is locked; connect Binance testnet first");
+      throw new Error(
+        "Live execution is locked; connect Binance testnet first"
+      );
     }
     const exchangeService = createExchangeService("binance", {
       apiKey: decrypt(account.apiKey),
@@ -385,7 +547,8 @@ export const autoTradingService = {
     }
     const openGrossNotional = openPositions.reduce(
       (sum, position) =>
-        sum + Math.abs(Number(position.quantity) * Number(position.currentPrice)),
+        sum +
+        Math.abs(Number(position.quantity) * Number(position.currentPrice)),
       0
     );
     return {
@@ -398,20 +561,26 @@ export const autoTradingService = {
     };
   },
 
+  getPaperPortfolioState(userId: string): Promise<PaperTradingPortfolio> {
+    return getPaperPortfolio(userId);
+  },
+
   async shouldAutoExecute(
     config: AutoTradingConfig,
     sig: Signal
   ): Promise<{ should: boolean; reason: string }> {
-    if (!config.enabled) return { should: false, reason: "Execution disabled" };
-    if (!config.exchangeAccountId) {
-      return { should: false, reason: "No Binance account configured" };
+    if (!config.enabled) {
+      return { should: false, reason: "Execution disabled" };
     }
     const metadata = metadataOf(sig);
     if (!metadata) {
       return { should: false, reason: "Not a Consensus WIF + DOT signal" };
     }
     if (sig.side !== "long" || !config.allowLong) {
-      return { should: false, reason: "Only long strategy positions are allowed" };
+      return {
+        should: false,
+        reason: "Only long strategy positions are allowed",
+      };
     }
     const allowedSources = config.allowedSources as string[] | null;
     if (allowedSources?.length && !allowedSources.includes(sig.source)) {
@@ -419,7 +588,10 @@ export const autoTradingService = {
     }
     const allowedSymbols = config.allowedSymbols as string[] | null;
     if (allowedSymbols?.length && !allowedSymbols.includes(sig.symbol)) {
-      return { should: false, reason: `${sig.symbol} is outside the strategy universe` };
+      return {
+        should: false,
+        reason: `${sig.symbol} is outside the strategy universe`,
+      };
     }
     const maxDailyTrades = Math.max(1, Number(config.maxDailyTrades ?? "10"));
     const todayStart = new Date();
@@ -440,13 +612,127 @@ export const autoTradingService = {
     return { should: true, reason: "Consensus execution checks passed" };
   },
 
-  async executeAutoTrade(userId: string, sig: Signal): Promise<AutoTradeResult> {
+  async executePaperTrade(
+    userId: string,
+    sig: Signal,
+    config: AutoTradingConfig,
+    metadata: ConsensusSignalMetadata
+  ): Promise<AutoTradeResult> {
+    try {
+      const [strategyRecord, portfolio] = await Promise.all([
+        strategyService.getById(metadata.strategyId),
+        getPaperPortfolio(userId),
+      ]);
+      if (
+        !strategyRecord ||
+        strategyRecord.userId !== userId ||
+        !strategyRecord.isActive
+      ) {
+        throw new Error("Active canonical strategy not found");
+      }
+      if (
+        portfolio.positions.some((position) => position.symbol === sig.symbol)
+      ) {
+        throw new Error(`${sig.symbol} already has an open paper position`);
+      }
+      const maxPositions = Math.min(
+        strategyRecord.config.execution.maxPositions,
+        Math.max(1, Number(config.maxOpenPositions ?? "2"))
+      );
+      if (portfolio.positions.length >= maxPositions) {
+        throw new Error("Maximum open paper positions reached");
+      }
+
+      const state = consensusWifDotService.transitionRiskState(
+        runtimeState(strategyRecord.config.runtime, portfolio.equity),
+        portfolio.equity,
+        strategyRecord.config
+      );
+      await strategyService.persistRuntime(strategyRecord.id, userId, state);
+      if (state.mode === "stopped") {
+        throw new Error("Strategy hard-stop is active");
+      }
+
+      const currentPrice = Number(
+        await publicMarketService.getPrice(sig.symbol)
+      );
+      const position = consensusWifDotService.calculatePositionPlan(
+        { ...metadata.strategySignal, entryPrice: currentPrice },
+        state,
+        portfolio.equity,
+        portfolio.openGrossNotional,
+        strategyRecord.config
+      );
+      const configuredCap = Math.max(0, Number(config.maxPositionSize ?? "0"));
+      const notional =
+        configuredCap > 0
+          ? Math.min(position.cappedNotional, configuredCap)
+          : position.cappedNotional;
+      const quantity = notional / currentPrice;
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new Error("Risk and gross limits leave no paper quantity");
+      }
+      const orderId = `paper-${sig.id}`;
+      await db
+        .update(signal)
+        .set({
+          status: "executed",
+          executedAt: new Date(),
+          entryPrice: String(currentPrice),
+          metadata: {
+            ...(sig.metadata as Record<string, unknown>),
+            autoTraded: true,
+            paperTrade: true,
+            executionMode: "paper",
+            riskMode: state.mode,
+            positionPlan: { ...position, cappedNotional: notional, quantity },
+            executionOrder: { id: orderId, simulated: true },
+            maxHoldMinutes: metadata.strategySignal.maxHoldMinutes,
+          },
+        })
+        .where(and(eq(signal.id, sig.id), eq(signal.userId, userId)));
+      await this.logTrade(userId, sig.id, "executed", "Paper order executed", {
+        orderId,
+        module: metadata.strategySignal.module,
+        symbol: sig.symbol,
+        quantity,
+        notional,
+        riskMode: state.mode,
+        riskPercent: position.riskPercent,
+        stopPrice: position.stopPrice,
+        takeProfitPrice: position.takeProfitPrice,
+        executionMode: "paper",
+      });
+      return {
+        executed: true,
+        reason: "Paper order executed",
+        orderId,
+        details: { position, quantity, notional, riskMode: state.mode },
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      await this.logTrade(userId, sig.id, "error", reason, {
+        module: metadata.strategySignal.module,
+        symbol: sig.symbol,
+        executionMode: "paper",
+      });
+      return { executed: false, reason };
+    }
+  },
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Real-order execution keeps all safety gates in one auditable transaction.
+  async executeAutoTrade(
+    userId: string,
+    sig: Signal
+  ): Promise<AutoTradeResult> {
     const metadata = metadataOf(sig);
     if (!metadata) {
       return { executed: false, reason: "Missing strategy metadata" };
     }
     const config = await this.getConfig(userId);
-    if (!config) return { executed: false, reason: "No execution config" };
+    if (!config) {
+      return { executed: false, reason: "No execution config" };
+    }
     const eligibility = await this.shouldAutoExecute(config, sig);
     if (!eligibility.should) {
       await this.logTrade(userId, sig.id, "skipped", eligibility.reason, {
@@ -454,6 +740,9 @@ export const autoTradingService = {
         module: metadata.strategySignal.module,
       });
       return { executed: false, reason: eligibility.reason };
+    }
+    if (!config.exchangeAccountId) {
+      return this.executePaperTrade(userId, sig, config, metadata);
     }
 
     try {
@@ -583,10 +872,15 @@ export const autoTradingService = {
     }
   },
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Exchange reconciliation is deliberately linear and auditable.
   async closeExpiredStrategySignals(
     userId: string,
     suppliedContext?: AutoTradingExecutionContext
   ): Promise<number> {
+    const config = await this.getConfig(userId);
+    if (!config?.exchangeAccountId) {
+      return this.closePaperStrategySignals(userId);
+    }
     const openSignals = await db
       .select()
       .from(signal)
@@ -599,21 +893,28 @@ export const autoTradingService = {
       )
       .orderBy(desc(signal.executedAt))
       .limit(200);
-    const strategySignals = openSignals.filter((item) => metadataOf(item));
-    if (strategySignals.length === 0) return 0;
+    const strategySignals = openSignals.flatMap((item) => {
+      const metadata = metadataOf(item);
+      return metadata && !metadata.paperTrade ? [{ item, metadata }] : [];
+    });
+    if (strategySignals.length === 0) {
+      return 0;
+    }
 
     let context = suppliedContext ?? (await this.getExecutionContext(userId));
     let closed = 0;
-    for (const item of strategySignals) {
-      const metadata = metadataOf(item)!;
+    for (const { item, metadata } of strategySignals) {
       try {
         const executedAt = item.executedAt ?? item.createdAt;
         const expiresAt =
-          executedAt.getTime() + metadata.strategySignal.maxHoldMinutes * 60_000;
+          executedAt.getTime() +
+          metadata.strategySignal.maxHoldMinutes * 60_000;
         const position = context.openPositions.find(
           (candidate) => candidate.symbol === item.symbol
         );
-        if (Date.now() < expiresAt && position) continue;
+        if (Date.now() < expiresAt && position) {
+          continue;
+        }
 
         let closingOrder: Order | undefined;
         let closeReason = "exchange_exit";
@@ -688,12 +989,127 @@ export const autoTradingService = {
     return closed;
   },
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Paper close handling mirrors each real exit gate explicitly.
+  async closePaperStrategySignals(
+    userId: string,
+    force = false
+  ): Promise<number> {
+    const openSignals = await db
+      .select()
+      .from(signal)
+      .where(
+        and(
+          eq(signal.userId, userId),
+          eq(signal.status, "executed"),
+          isNull(signal.exitPrice)
+        )
+      )
+      .orderBy(desc(signal.executedAt))
+      .limit(200);
+    const paperSignals = openSignals.flatMap((item) => {
+      const metadata = metadataOf(item);
+      return metadata?.paperTrade ? [{ item, metadata }] : [];
+    });
+    let closed = 0;
+    for (const { item, metadata } of paperSignals) {
+      try {
+        const currentPrice = Number(
+          await publicMarketService.getPrice(item.symbol)
+        );
+        const entryPrice = Number(item.entryPrice);
+        const executedAt = item.executedAt ?? item.createdAt;
+        const expiresAt =
+          executedAt.getTime() +
+          metadata.strategySignal.maxHoldMinutes * 60_000;
+        const stopPrice = Number(metadata.positionPlan?.stopPrice ?? 0);
+        const takeProfitPrice = Number(
+          metadata.positionPlan?.takeProfitPrice ?? 0
+        );
+        let closeReason: string | null = null;
+        if (force) {
+          closeReason = "paper_stop";
+        } else if (stopPrice > 0 && currentPrice <= stopPrice) {
+          closeReason = "paper_stop_loss";
+        } else if (takeProfitPrice > 0 && currentPrice >= takeProfitPrice) {
+          closeReason = "paper_take_profit";
+        } else if (Date.now() >= expiresAt) {
+          closeReason = "paper_time_exit";
+        }
+        if (!closeReason) {
+          continue;
+        }
+
+        const notional = Number(
+          metadata.positionPlan?.cappedNotional ??
+            metadata.positionPreview?.cappedNotional ??
+            0
+        );
+        const pnl = calculatePaperPnl({
+          entryPrice,
+          exitPrice: currentPrice,
+          notional,
+        });
+        const exitAt = new Date();
+        const holdingMinutes = Math.max(
+          0,
+          Math.floor((exitAt.getTime() - executedAt.getTime()) / 60_000)
+        );
+        await db
+          .update(signal)
+          .set({
+            exitPrice: String(currentPrice),
+            exitAt,
+            realizedPnl: String(pnl.percent.toFixed(4)),
+            holdingPeriodMinutes: String(holdingMinutes),
+            isWin: pnl.percent > 0,
+            metadata: {
+              ...(item.metadata as Record<string, unknown>),
+              closedByStrategy: true,
+              closeReason,
+              pnlSource: "paper_price",
+              paperPnlUsdt: pnl.usdt,
+              closedAt: exitAt.toISOString(),
+            },
+          })
+          .where(and(eq(signal.id, item.id), eq(signal.userId, userId)));
+        await this.logTrade(userId, item.id, "closed", closeReason, {
+          module: metadata.strategySignal.module,
+          symbol: item.symbol,
+          exitPrice: currentPrice,
+          netPnlPercent: pnl.percent,
+          paperPnlUsdt: pnl.usdt,
+          executionMode: "paper",
+        });
+        closed += 1;
+      } catch (error) {
+        await this.logTrade(
+          userId,
+          item.id,
+          "error",
+          error instanceof Error ? error.message : String(error),
+          {
+            symbol: item.symbol,
+            module: metadata.strategySignal.module,
+            executionMode: "paper",
+          }
+        );
+      }
+    }
+    return closed;
+  },
+
   async emergencyStop(userId: string): Promise<{ closed: number }> {
+    const config = await this.getConfig(userId);
     await this.upsertConfig(userId, { enabled: false });
+    if (!config?.exchangeAccountId) {
+      return { closed: await this.closePaperStrategySignals(userId, true) };
+    }
     const context = await this.getExecutionContext(userId);
     let closed = 0;
     for (const position of context.openPositions) {
-      if (!STRATEGY_SYMBOLS.has(position.symbol)) continue;
+      if (!STRATEGY_SYMBOLS.has(position.symbol)) {
+        continue;
+      }
       await context.exchangeService.createOrder({
         symbol: position.symbol,
         side: position.side === "long" ? "sell" : "buy",
@@ -723,7 +1139,7 @@ export const autoTradingService = {
     });
   },
 
-  async getLogs(userId: string, limit = 50) {
+  getLogs(userId: string, limit = 50) {
     return db
       .select()
       .from(autoTradingLog)
