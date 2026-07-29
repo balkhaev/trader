@@ -1,0 +1,92 @@
+name: One-time repository cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/repository-cleanup-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Close every open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t prs < <(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number --jq '.[].number')
+          for pr in "${prs[@]}"; do
+            gh pr close "$pr" --repo "$GITHUB_REPOSITORY"
+          done
+          echo "closed_prs=${#prs[@]}" >> "$GITHUB_ENV"
+
+      - name: Delete every branch except main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t branches < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/branches?per_page=100" --jq '.[].name')
+          deleted=0
+          for branch in "${branches[@]}"; do
+            if [[ "$branch" == "main" ]]; then
+              continue
+            fi
+            encoded=$(python - "$branch" <<'PY'
+          import sys
+          from urllib.parse import quote
+          print(quote(sys.argv[1], safe=""))
+          PY
+            )
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded}"
+            deleted=$((deleted + 1))
+          done
+          echo "deleted_branches=$deleted" >> "$GITHUB_ENV"
+
+      - name: Verify repository invariant
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branches=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/branches?per_page=100" --jq '[.[].name] | sort | join(",")')
+          open_prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number --jq 'length')
+          if [[ "$branches" != "main" ]]; then
+            echo "Unexpected remaining branches: $branches" >&2
+            exit 1
+          fi
+          if [[ "$open_prs" != "0" ]]; then
+            echo "Unexpected remaining open PRs: $open_prs" >&2
+            exit 1
+          fi
+
+      - name: Commit cleanup report
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > .github/repository-cleanup-report.json <<JSON
+          {
+            "completed": true,
+            "closedPullRequests": ${closed_prs:-0},
+            "deletedBranches": ${deleted_branches:-0},
+            "remainingBranches": ["main"],
+            "remainingOpenPullRequests": 0,
+            "mainSha": "${GITHUB_SHA}",
+            "completedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          JSON
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/repository-cleanup-report.json
+          git commit -m "Record repository cleanup"
+          git push origin HEAD:main
