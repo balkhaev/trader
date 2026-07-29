@@ -1,20 +1,15 @@
 "use client";
 
 import {
+  Activity,
   BarChart3,
-  Bell,
-  Bot,
-  Brain,
-  Database,
+  BookOpenCheck,
   FlaskConical,
-  GitBranch,
-  LayoutDashboard,
-  Newspaper,
-  PenTool,
-  Ship,
-  Sparkles,
-  TrendingUp,
-  Wallet,
+  Gauge,
+  RadioTower,
+  ShieldCheck,
+  WalletCards,
+  Waves,
 } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
@@ -23,218 +18,85 @@ import { cn } from "@/lib/utils";
 import { ModeToggle } from "./mode-toggle";
 import UserMenu from "./user-menu";
 
-interface NavItemProps {
+const NAVIGATION: Array<{
   href: Route;
+  label: string;
   icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-  badge?: number;
-  isActive?: boolean;
-}
+}> = [
+  { href: "/", label: "Терминал", icon: Gauge },
+  { href: "/strategy-builder", label: "Стратегия", icon: Waves },
+  { href: "/signals", label: "Сигналы", icon: RadioTower },
+  { href: "/auto-trading", label: "Исполнение", icon: Activity },
+  { href: "/validation", label: "Forward", icon: ShieldCheck },
+  { href: "/research", label: "Исследование", icon: FlaskConical },
+  { href: "/exchanges", label: "Binance", icon: WalletCards },
+];
 
-function NavItem({
-  href,
-  icon: Icon,
-  children,
-  badge,
-  isActive,
-}: NavItemProps) {
-  return (
-    <Link
-      className={cn(
-        "flex h-7 items-center gap-1.5 rounded px-2 font-medium text-xs transition-colors",
-        "hover:bg-muted",
-        isActive && "bg-primary text-primary-foreground hover:bg-primary/90"
-      )}
-      href={href}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      <span>{children}</span>
-      {badge !== undefined && badge > 0 && (
-        <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 font-medium text-[10px] text-destructive-foreground">
-          {badge > 99 ? "99+" : badge}
-        </span>
-      )}
-    </Link>
-  );
-}
-
-function NavGroup({
-  children,
-  highlight,
-}: {
-  children: React.ReactNode;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-0.5",
-        highlight && "rounded bg-muted/50 p-1"
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-function Separator() {
-  return <div className="mx-2 h-5 w-px bg-border" />;
+function isRouteActive(pathname: string, href: Route) {
+  return href === "/" ? pathname === "/" : pathname.startsWith(String(href));
 }
 
 export function BloombergHeader() {
   const pathname = usePathname();
 
-  // TODO: получить количество pending сигналов из API
-  const pendingSignalsCount = 0;
-
   return (
-    <header className="sticky top-0 z-50 h-10 border-b bg-background">
-      <div className="flex h-full items-center px-4">
-        {/* Logo */}
-        <Link className="flex items-center gap-2" href="/">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-primary">
-            <TrendingUp className="h-4 w-4 text-primary-foreground" />
+    <header className="sticky top-0 z-50 border-b border-border/80 bg-background/92 backdrop-blur-xl">
+      <div className="mx-auto flex h-14 max-w-[1680px] items-center gap-3 px-3 sm:px-4">
+        <Link className="group flex shrink-0 items-center gap-2" href="/">
+          <div className="strategy-glow flex size-8 items-center justify-center rounded-lg border border-primary/35 bg-primary/10">
+            <BarChart3 className="size-4 text-primary transition-transform group-hover:scale-110" />
           </div>
-          <span className="font-bold text-sm tracking-tight">TRADER</span>
+          <div className="hidden leading-none sm:block">
+            <div className="font-mono font-semibold text-sm tracking-[0.16em]">
+              WIF<span className="text-primary">/</span>DOT
+            </div>
+            <div className="mt-1 text-[9px] text-muted-foreground uppercase tracking-[0.22em]">
+              Risk Accelerator
+            </div>
+          </div>
         </Link>
 
-        <Separator />
+        <div className="hidden h-7 w-px bg-border md:block" />
 
-        {/* Primary Navigation - Dashboard + Agents + Markets */}
-        <NavGroup highlight>
-          <NavItem href="/" icon={LayoutDashboard} isActive={pathname === "/"}>
-            Dashboard
-          </NavItem>
-          <NavItem
-            href="/agents"
-            icon={Bot}
-            isActive={pathname.startsWith("/agents")}
-          >
-            Agents
-          </NavItem>
-          <NavItem
-            href="/markets"
-            icon={TrendingUp}
-            isActive={pathname.startsWith("/markets")}
-          >
-            Markets
-          </NavItem>
-          <NavItem
-            badge={pendingSignalsCount}
-            href="/signals"
-            icon={Bell}
-            isActive={pathname.startsWith("/signals")}
-          >
-            Signals
-          </NavItem>
-        </NavGroup>
+        <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {NAVIGATION.map(({ href, label, icon: Icon }) => {
+            const active = isRouteActive(pathname, href);
+            return (
+              <Link
+                className={cn(
+                  "flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs transition-colors",
+                  active
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+                href={href}
+                key={String(href)}
+              >
+                <Icon className="size-3.5" />
+                <span>{label}</span>
+              </Link>
+            );
+          })}
+        </nav>
 
-        <Separator />
+        <div className="hidden items-center gap-2 rounded-lg border border-border/70 bg-card/70 px-2.5 py-1.5 lg:flex">
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-40" />
+            <span className="relative inline-flex size-2 rounded-full bg-primary" />
+          </span>
+          <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
+            Scheduler opt-in
+          </span>
+        </div>
 
-        {/* Trading Navigation */}
-        <NavGroup>
-          <NavItem
-            href="/market"
-            icon={BarChart3}
-            isActive={pathname.startsWith("/market")}
+        <div className="flex shrink-0 items-center gap-1">
+          <Link
+            aria-label="Документация стратегии"
+            className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            href="/research"
           >
-            Market
-          </NavItem>
-          <NavItem
-            href="/strategies"
-            icon={Brain}
-            isActive={pathname.startsWith("/strategies")}
-          >
-            Strategies
-          </NavItem>
-          <NavItem
-            href="/strategy-builder"
-            icon={PenTool}
-            isActive={pathname.startsWith("/strategy-builder")}
-          >
-            Builder
-          </NavItem>
-          <NavItem
-            href="/backtests"
-            icon={FlaskConical}
-            isActive={pathname.startsWith("/backtests")}
-          >
-            Backtests
-          </NavItem>
-        </NavGroup>
-
-        <Separator />
-
-        {/* Intelligence Navigation */}
-        <NavGroup>
-          <NavItem
-            href="/intelligence"
-            icon={GitBranch}
-            isActive={pathname.startsWith("/intelligence")}
-          >
-            Intelligence
-          </NavItem>
-          <NavItem
-            href="/transport"
-            icon={Ship}
-            isActive={pathname.startsWith("/transport")}
-          >
-            Transport
-          </NavItem>
-          <NavItem
-            href="/trends"
-            icon={Sparkles}
-            isActive={pathname.startsWith("/trends")}
-          >
-            Trends
-          </NavItem>
-          <NavItem
-            href="/news"
-            icon={Newspaper}
-            isActive={pathname.startsWith("/news")}
-          >
-            News
-          </NavItem>
-        </NavGroup>
-
-        <Separator />
-
-        {/* System Navigation */}
-        <NavGroup>
-          <NavItem
-            href="/exchanges"
-            icon={Wallet}
-            isActive={pathname.startsWith("/exchanges")}
-          >
-            Exchanges
-          </NavItem>
-          <NavItem
-            href="/data"
-            icon={Database}
-            isActive={pathname.startsWith("/data")}
-          >
-            Data
-          </NavItem>
-        </NavGroup>
-
-        <Separator />
-
-        {/* Portfolio */}
-        <NavGroup>
-          <NavItem
-            href="/my"
-            icon={Wallet}
-            isActive={pathname.startsWith("/my")}
-          >
-            Portfolio
-          </NavItem>
-        </NavGroup>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Utilities */}
-        <div className="flex items-center gap-2">
+            <BookOpenCheck className="size-4" />
+          </Link>
           <ModeToggle />
           <UserMenu />
         </div>

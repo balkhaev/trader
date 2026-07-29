@@ -1,425 +1,292 @@
 import {
   db,
-  type IndicatorCondition,
-  type PriceCondition,
-  type StrategyCondition,
-  type StrategyConfig,
-  type StrategyRule,
+  DEFAULT_CONSENSUS_STRATEGY_CONFIG,
   strategy,
+  type StrategyConfig,
+  type StrategyRuntimeState,
 } from "@trader/db";
 import type { InferSelectModel } from "drizzle-orm";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { generateConsensusLeanCode } from "./lean-code";
 
-type Strategy = InferSelectModel<typeof strategy>;
+export type StrategyRecord = InferSelectModel<typeof strategy>;
+
+const consensusKind = sql`${strategy.config}->>'kind' = 'consensus_wif_dot_v1'`;
+
+function cloneConfig(config: StrategyConfig): StrategyConfig {
+  return structuredClone(config);
+}
+
+function validateConfig(config: StrategyConfig): StrategyConfig {
+  for (const [name, value] of Object.entries(config.risk)) {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`risk.${name} must be a positive finite number`);
+    }
+  }
+  if (config.risk.boostWifRiskPercent < config.risk.baseWifRiskPercent) {
+    throw new Error("WIF boost risk cannot be below base risk");
+  }
+  if (config.risk.boostDotRiskPercent < config.risk.baseDotRiskPercent) {
+    throw new Error("DOT boost risk cannot be below base risk");
+  }
+  if (
+    config.risk.deRiskDrawdownPercent >= config.risk.hardStopDrawdownPercent
+  ) {
+    throw new Error("De-risk drawdown must be below hard-stop drawdown");
+  }
+  if (
+    config.execution.maxGrossLeverage <= 0 ||
+    config.execution.maxGrossLeverage > 5
+  ) {
+    throw new Error("Gross leverage must be in (0, 5]");
+  }
+  if (
+    config.execution.roundTurnCostBps < 0 ||
+    config.execution.roundTurnCostBps > 100
+  ) {
+    throw new Error("Round-turn cost reserve must be between 0 and 100 bps");
+  }
+  return config;
+}
+
+function mergeConfig(
+  existing: StrategyConfig,
+  updates: Partial<StrategyConfig>
+): StrategyConfig {
+  if (updates.kind && updates.kind !== "consensus_wif_dot_v1") {
+    throw new Error("Only consensus_wif_dot_v1 is supported");
+  }
+  const defaults = DEFAULT_CONSENSUS_STRATEGY_CONFIG;
+  return validateConfig({
+    ...defaults,
+    name: updates.name ?? existing.name ?? defaults.name,
+    description:
+      updates.description ?? existing.description ?? defaults.description,
+    execution: {
+      ...defaults.execution,
+      roundTurnCostBps:
+        updates.execution?.roundTurnCostBps ??
+        existing.execution.roundTurnCostBps,
+      maxGrossLeverage:
+        updates.execution?.maxGrossLeverage ??
+        existing.execution.maxGrossLeverage,
+    },
+    wif: {
+      ...defaults.wif,
+      enabled: updates.wif?.enabled ?? existing.wif.enabled,
+    },
+    dot: {
+      ...defaults.dot,
+      enabled: updates.dot?.enabled ?? existing.dot.enabled,
+    },
+    risk: {
+      ...existing.risk,
+      ...updates.risk,
+    },
+    runtime: existing.runtime,
+    validation: existing.validation,
+  });
+}
+
+function runtime(
+  equity: number
+): Omit<StrategyRuntimeState, "updatedAt"> {
+  return {
+    mode: "base",
+    initialEquity: equity,
+    equity,
+    highWaterEquity: equity,
+    lastDeriskHighWaterEquity: equity,
+  };
+}
+
+function runtimeToConfig(
+  config: StrategyConfig,
+  state: Omit<StrategyRuntimeState, "updatedAt"> | StrategyRuntimeState
+): StrategyConfig {
+  return {
+    ...config,
+    runtime: {
+      ...state,
+      updatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+async function ownedCanonical(strategyId: string, userId: string) {
+  const [found] = await db
+    .select()
+    .from(strategy)
+    .where(
+      and(
+        eq(strategy.id, strategyId),
+        eq(strategy.userId, userId),
+        consensusKind
+      )
+    );
+  return found ?? null;
+}
 
 export const strategyService = {
-  // CRUD operations
-  async create(userId: string, config: StrategyConfig): Promise<Strategy> {
-    const leanCode = this.generateLeanCode(config);
+  getDefaultConfig(): StrategyConfig {
+    return cloneConfig(DEFAULT_CONSENSUS_STRATEGY_CONFIG);
+  },
 
+  async create(userId: string, config: StrategyConfig): Promise<StrategyRecord> {
+    const normalized = mergeConfig(this.getDefaultConfig(), config);
     const [created] = await db
       .insert(strategy)
       .values({
         userId,
-        name: config.name,
-        description: config.description,
-        config,
-        leanCode,
+        name: normalized.name,
+        description: normalized.description,
+        config: normalized,
+        leanCode: generateConsensusLeanCode(normalized),
       })
       .returning();
-
     return created!;
+  },
+
+  async ensureCanonical(userId: string): Promise<StrategyRecord> {
+    const [existing] = await db
+      .select()
+      .from(strategy)
+      .where(and(eq(strategy.userId, userId), consensusKind))
+      .orderBy(desc(strategy.updatedAt))
+      .limit(1);
+    if (existing) return existing;
+    return this.create(userId, this.getDefaultConfig());
   },
 
   async update(
     strategyId: string,
     userId: string,
     updates: Partial<StrategyConfig>
-  ): Promise<Strategy> {
-    const [existing] = await db
-      .select()
-      .from(strategy)
-      .where(and(eq(strategy.id, strategyId), eq(strategy.userId, userId)));
-
-    if (!existing) {
-      throw new Error("Strategy not found");
-    }
-
-    const newConfig = { ...existing.config, ...updates } as StrategyConfig;
-    const leanCode = this.generateLeanCode(newConfig);
-
+  ): Promise<StrategyRecord> {
+    const existing = await ownedCanonical(strategyId, userId);
+    if (!existing) throw new Error("Canonical strategy not found");
+    const newConfig = mergeConfig(existing.config, updates);
     const [updated] = await db
       .update(strategy)
       .set({
         name: newConfig.name,
         description: newConfig.description,
         config: newConfig,
-        leanCode,
+        leanCode: generateConsensusLeanCode(newConfig),
       })
       .where(eq(strategy.id, strategyId))
       .returning();
-
     return updated!;
   },
 
-  async delete(strategyId: string, userId: string): Promise<void> {
-    await db
-      .delete(strategy)
-      .where(and(eq(strategy.id, strategyId), eq(strategy.userId, userId)));
+  async persistRuntime(
+    strategyId: string,
+    userId: string,
+    state: Omit<StrategyRuntimeState, "updatedAt"> | StrategyRuntimeState
+  ): Promise<StrategyRecord> {
+    const existing = await ownedCanonical(strategyId, userId);
+    if (!existing) throw new Error("Canonical strategy not found");
+    const [updated] = await db
+      .update(strategy)
+      .set({ config: runtimeToConfig(existing.config, state) })
+      .where(eq(strategy.id, strategyId))
+      .returning();
+    return updated!;
   },
 
-  async getById(strategyId: string): Promise<Strategy | null> {
+  async resetRuntime(
+    strategyId: string,
+    userId: string,
+    equity: number
+  ): Promise<StrategyRecord> {
+    if (!Number.isFinite(equity) || equity <= 0) {
+      throw new Error("A positive account equity is required");
+    }
+    return this.persistRuntime(strategyId, userId, runtime(equity));
+  },
+
+  async startForwardValidation(
+    strategyId: string,
+    userId: string,
+    equity: number
+  ): Promise<StrategyRecord> {
+    if (!Number.isFinite(equity) || equity <= 0) {
+      throw new Error("A positive account equity is required");
+    }
+    const existing = await ownedCanonical(strategyId, userId);
+    if (!existing) throw new Error("Canonical strategy not found");
+    const startedAt = new Date().toISOString();
+    const [updated] = await db
+      .update(strategy)
+      .set({
+        config: {
+          ...runtimeToConfig(existing.config, runtime(equity)),
+          validation: { startedAt },
+        },
+      })
+      .where(eq(strategy.id, strategyId))
+      .returning();
+    return updated!;
+  },
+
+  async getById(strategyId: string): Promise<StrategyRecord | null> {
     const [found] = await db
       .select()
       .from(strategy)
-      .where(eq(strategy.id, strategyId));
-
-    return found || null;
+      .where(and(eq(strategy.id, strategyId), consensusKind));
+    return found ?? null;
   },
 
-  async getByUser(userId: string): Promise<Strategy[]> {
+  async getByUser(userId: string): Promise<StrategyRecord[]> {
     return db
       .select()
       .from(strategy)
-      .where(eq(strategy.userId, userId))
+      .where(and(eq(strategy.userId, userId), consensusKind))
       .orderBy(desc(strategy.updatedAt));
   },
 
-  async getPublic(limit = 20): Promise<Strategy[]> {
+  async getActiveByUser(userId: string): Promise<StrategyRecord | null> {
+    const [found] = await db
+      .select()
+      .from(strategy)
+      .where(
+        and(
+          eq(strategy.userId, userId),
+          eq(strategy.isActive, true),
+          consensusKind
+        )
+      )
+      .orderBy(desc(strategy.updatedAt))
+      .limit(1);
+    return found ?? null;
+  },
+
+  async getActive(): Promise<StrategyRecord[]> {
     return db
       .select()
       .from(strategy)
-      .where(eq(strategy.isPublic, true))
-      .orderBy(desc(strategy.createdAt))
-      .limit(limit);
+      .where(and(eq(strategy.isActive, true), consensusKind))
+      .orderBy(desc(strategy.updatedAt));
   },
 
   async toggleActive(strategyId: string, userId: string): Promise<boolean> {
-    const [existing] = await db
-      .select()
-      .from(strategy)
-      .where(and(eq(strategy.id, strategyId), eq(strategy.userId, userId)));
-
-    if (!existing) {
-      throw new Error("Strategy not found");
-    }
-
+    const existing = await ownedCanonical(strategyId, userId);
+    if (!existing) throw new Error("Canonical strategy not found");
     const newActive = !existing.isActive;
-
+    if (newActive) {
+      await db
+        .update(strategy)
+        .set({ isActive: false })
+        .where(eq(strategy.userId, userId));
+    }
     await db
       .update(strategy)
       .set({ isActive: newActive })
       .where(eq(strategy.id, strategyId));
-
     return newActive;
   },
 
-  // Generate Lean/QuantConnect Python code from strategy config
   generateLeanCode(config: StrategyConfig): string {
-    const className = this.toPascalCase(config.name);
-    const symbolsStr = config.symbols.map((s) => `"${s}"`).join(", ");
-
-    // Generate indicator initialization
-    const indicators = this.extractIndicators(config);
-    const indicatorInit = this.generateIndicatorInit(indicators);
-
-    // Generate entry logic
-    const entryLogic = this.generateRulesLogic(config.entryRules, "entry");
-    const exitLogic = this.generateRulesLogic(config.exitRules, "exit");
-
-    return `# region imports
-from AlgorithmImports import *
-# endregion
-
-class ${className}(QCAlgorithm):
-    """
-    ${config.description || config.name}
-    
-    Generated by Trader Strategy Builder
-    Symbols: ${config.symbols.join(", ")}
-    Timeframe: ${config.timeframe}
-    """
-    
-    def Initialize(self):
-        self.SetStartDate(2023, 1, 1)
-        self.SetCash(100000)
-        
-        # Add symbols
-        self.symbols = [${symbolsStr}]
-        for symbol in self.symbols:
-            self.AddCrypto(symbol, Resolution.${this.timeframeToResolution(config.timeframe)})
-        
-        # Risk management settings
-        self.position_size_percent = ${config.positionSizePercent / 100}
-        self.max_positions = ${config.maxPositions}
-        ${config.defaultStopLossPercent ? `self.stop_loss_percent = ${config.defaultStopLossPercent / 100}` : ""}
-        ${config.defaultTakeProfitPercent ? `self.take_profit_percent = ${config.defaultTakeProfitPercent / 100}` : ""}
-        
-        # Initialize indicators
-        self.indicators = {}
-${indicatorInit}
-        
-        # Track positions
-        self.entry_prices = {}
-    
-    def OnData(self, data: Slice):
-        for symbol in self.symbols:
-            if symbol not in data or not data[symbol]:
-                continue
-            
-            # Check if all indicators are ready
-            if not self._indicators_ready(symbol):
-                continue
-            
-            # Get current values
-            close = data[symbol].Close
-            volume = data[symbol].Volume if hasattr(data[symbol], 'Volume') else 0
-            
-            # Check entry conditions
-            if not self.Portfolio[symbol].Invested:
-${entryLogic}
-            else:
-                # Check exit conditions
-${exitLogic}
-    
-    def _indicators_ready(self, symbol):
-        if symbol not in self.indicators:
-            return False
-        for name, indicator in self.indicators[symbol].items():
-            if not indicator.IsReady:
-                return False
-        return True
-    
-    def _enter_long(self, symbol, reason=""):
-        if self._count_positions() >= self.max_positions:
-            return
-        
-        quantity = self.CalculateOrderQuantity(symbol, self.position_size_percent)
-        if quantity > 0:
-            self.MarketOrder(symbol, quantity)
-            self.entry_prices[symbol] = self.Securities[symbol].Price
-            self.Debug(f"LONG {symbol}: {reason}")
-    
-    def _enter_short(self, symbol, reason=""):
-        if self._count_positions() >= self.max_positions:
-            return
-        
-        quantity = self.CalculateOrderQuantity(symbol, self.position_size_percent)
-        if quantity > 0:
-            self.MarketOrder(symbol, -quantity)
-            self.entry_prices[symbol] = self.Securities[symbol].Price
-            self.Debug(f"SHORT {symbol}: {reason}")
-    
-    def _close_position(self, symbol, reason=""):
-        if self.Portfolio[symbol].Invested:
-            self.Liquidate(symbol)
-            if symbol in self.entry_prices:
-                del self.entry_prices[symbol]
-            self.Debug(f"CLOSE {symbol}: {reason}")
-    
-    def _count_positions(self):
-        return sum(1 for s in self.symbols if self.Portfolio[s].Invested)
-`;
-  },
-
-  // Helper methods for code generation
-  extractIndicators(config: StrategyConfig): Map<string, Set<number>> {
-    const indicators = new Map<string, Set<number>>();
-
-    const processCondition = (condition: StrategyCondition) => {
-      if (condition.type === "indicator") {
-        const ind = condition as IndicatorCondition;
-        const key = ind.indicator;
-        const period = ind.period || 14;
-
-        if (!indicators.has(key)) {
-          indicators.set(key, new Set());
-        }
-        indicators.get(key)!.add(period);
-      }
-    };
-
-    for (const rule of [...config.entryRules, ...config.exitRules]) {
-      for (const condition of rule.conditions) {
-        processCondition(condition);
-      }
-    }
-
-    return indicators;
-  },
-
-  generateIndicatorInit(indicators: Map<string, Set<number>>): string {
-    const lines: string[] = [];
-
-    lines.push("        for symbol in self.symbols:");
-    lines.push("            self.indicators[symbol] = {}");
-
-    for (const [indicator, periods] of indicators) {
-      for (const period of periods) {
-        const varName = `${indicator}_${period}`;
-        let initCode = "";
-
-        switch (indicator) {
-          case "rsi":
-            initCode = `self.RSI(symbol, ${period}, MovingAverageType.Willder, Resolution.Daily)`;
-            break;
-          case "macd":
-            initCode =
-              "self.MACD(symbol, 12, 26, 9, MovingAverageType.Exponential, Resolution.Daily)";
-            break;
-          case "sma":
-            initCode = `self.SMA(symbol, ${period}, Resolution.Daily)`;
-            break;
-          case "ema":
-            initCode = `self.EMA(symbol, ${period}, Resolution.Daily)`;
-            break;
-          case "bollinger":
-            initCode = `self.BB(symbol, ${period}, 2, Resolution.Daily)`;
-            break;
-          case "adx":
-            initCode = `self.ADX(symbol, ${period}, Resolution.Daily)`;
-            break;
-          case "atr":
-            initCode = `self.ATR(symbol, ${period}, Resolution.Daily)`;
-            break;
-          default:
-            continue;
-        }
-
-        lines.push(
-          `            self.indicators[symbol]["${varName}"] = ${initCode}`
-        );
-      }
-    }
-
-    return lines.join("\n");
-  },
-
-  generateRulesLogic(
-    rules: StrategyRule[],
-    ruleType: "entry" | "exit"
-  ): string {
-    if (rules.length === 0) {
-      return "                pass  # No rules defined";
-    }
-
-    const lines: string[] = [];
-    const indent = "                ";
-
-    for (const rule of rules.sort((a, b) => a.priority - b.priority)) {
-      const conditions = rule.conditions
-        .map((c) => this.conditionToCode(c))
-        .filter(Boolean);
-
-      if (conditions.length === 0) continue;
-
-      const conditionStr =
-        rule.conditionLogic === "AND"
-          ? conditions.join(" and ")
-          : conditions.join(" or ");
-
-      lines.push(`${indent}# ${rule.name}`);
-      lines.push(`${indent}if ${conditionStr}:`);
-
-      switch (rule.action) {
-        case "long":
-          lines.push(`${indent}    self._enter_long(symbol, "${rule.name}")`);
-          break;
-        case "short":
-          lines.push(`${indent}    self._enter_short(symbol, "${rule.name}")`);
-          break;
-        case "close_long":
-        case "close_short":
-        case "close_all":
-          lines.push(
-            `${indent}    self._close_position(symbol, "${rule.name}")`
-          );
-          break;
-      }
-    }
-
-    return lines.join("\n") || `${indent}pass`;
-  },
-
-  conditionToCode(condition: StrategyCondition): string {
-    if (condition.type === "indicator") {
-      const ind = condition as IndicatorCondition;
-      const period = ind.period || 14;
-      const varName = `${ind.indicator}_${period}`;
-
-      let accessor = `self.indicators[symbol]["${varName}"].Current.Value`;
-
-      // Handle specific indicator parameters
-      if (ind.indicator === "macd") {
-        switch (ind.parameter) {
-          case "signal":
-            accessor = `self.indicators[symbol]["${varName}"].Signal.Current.Value`;
-            break;
-          case "histogram":
-            accessor = `self.indicators[symbol]["${varName}"].Histogram.Current.Value`;
-            break;
-        }
-      } else if (ind.indicator === "bollinger") {
-        switch (ind.parameter) {
-          case "upper":
-            accessor = `self.indicators[symbol]["${varName}"].UpperBand.Current.Value`;
-            break;
-          case "lower":
-            accessor = `self.indicators[symbol]["${varName}"].LowerBand.Current.Value`;
-            break;
-          case "middle":
-            accessor = `self.indicators[symbol]["${varName}"].MiddleBand.Current.Value`;
-            break;
-        }
-      }
-
-      const op = this.operatorToCode(ind.operator);
-      return `${accessor} ${op} ${ind.value}`;
-    }
-
-    if (condition.type === "price") {
-      const price = condition as PriceCondition;
-      const op = this.operatorToCode(price.operator);
-      return `${price.comparison} ${op} ${price.value}`;
-    }
-
-    return "";
-  },
-
-  operatorToCode(op: string): string {
-    switch (op) {
-      case "crosses_above":
-      case "crosses_below":
-        return ">"; // Simplified - would need previous value tracking
-      default:
-        return op;
-    }
-  },
-
-  timeframeToResolution(timeframe: string): string {
-    switch (timeframe) {
-      case "1m":
-        return "Minute";
-      case "5m":
-        return "Minute";
-      case "15m":
-        return "Minute";
-      case "1h":
-        return "Hour";
-      case "4h":
-        return "Hour";
-      case "1d":
-        return "Daily";
-      default:
-        return "Daily";
-    }
-  },
-
-  toPascalCase(str: string): string {
-    return str
-      .replace(/[^a-zA-Z0-9\s]/g, "")
-      .split(/\s+/)
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join("");
+    return generateConsensusLeanCode(config);
   },
 };

@@ -2,350 +2,304 @@
 
 import {
   Activity,
-  ArrowDown,
-  ArrowUp,
-  Check,
-  RefreshCw,
-  X,
+  ArrowDownRight,
+  ArrowRight,
+  CheckCircle2,
+  Clock3,
+  RadioTower,
+  ShieldCheck,
+  Target,
+  XCircle,
 } from "lucide-react";
-import { useState } from "react";
-import { PageLayout, StatItem, StatRow } from "@/components/layout/page-layout";
-import { PerformanceStatsCard } from "@/components/signals/performance-stats";
-import { SignalApproveDialog } from "@/components/signals/signal-approve-dialog";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { PageLayout, PageLoading, StatItem, StatRow } from "@/components/layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TerminalPanel } from "@/components/ui/terminal-panel";
-import {
-  type Signal,
-  useClosedSignals,
-  usePendingSignals,
-  usePerformanceStats,
-  useRejectSignal,
-  useSignalStats,
-  useSignals,
-} from "@/hooks/use-signals";
+import { type Signal, useClosedSignals, useSignals } from "@/hooks/use-signals";
 
-function SignalRow({
-  signal,
-  onApprove,
-  onReject,
-  showActions = false,
-}: {
-  signal: Signal;
-  onApprove?: (signal: Signal) => void;
-  onReject?: (signal: Signal) => void;
-  showActions?: boolean;
-}) {
+interface StrategyPlan {
+  module?: "wif_oi_flush" | "dot_negative_funding";
+  reason?: string;
+  entryPrice?: number;
+  stopPrice?: number;
+  takeProfitPrice?: number;
+  maxHoldMinutes?: number;
+  riskPercent?: number;
+  cappedNotional?: number;
+  quantity?: number;
+  maxGrossLeverage?: number;
+}
+
+interface StrategyMetadata {
+  strategyKind?: string;
+  reasoning?: string;
+  strategySignal?: StrategyPlan;
+  positionPreview?: StrategyPlan;
+  positionPlan?: StrategyPlan;
+  closeReason?: string;
+  pnlSource?: "income" | "price";
+}
+
+function meta(signal: Signal) {
+  return (signal.metadata ?? {}) as StrategyMetadata;
+}
+
+function isStrategySignal(signal: Signal) {
+  return meta(signal).strategyKind === "consensus_wif_dot_v1";
+}
+
+function moduleName(signal: Signal) {
+  const module = meta(signal).strategySignal?.module;
+  if (module === "wif_oi_flush") return "WIF OI FLUSH";
+  if (module === "dot_negative_funding") return "DOT FUNDING REBOUND";
+  return signal.symbol;
+}
+
+function TradeCard({ signal }: { signal: Signal }) {
+  const metadata = meta(signal);
+  const signalPlan = metadata.strategySignal;
+  const position = metadata.positionPlan ?? metadata.positionPreview;
+  const closed = signal.exitPrice !== null && signal.exitPrice !== undefined;
+  const Icon = closed
+    ? signal.isWin
+      ? CheckCircle2
+      : XCircle
+    : signal.status === "executed"
+      ? Activity
+      : Clock3;
+
   return (
-    <div className="flex items-center justify-between border-border/50 border-b px-3 py-2 last:border-0 hover:bg-muted/30">
-      <div className="flex items-center gap-3">
-        <div
-          className={`flex h-6 w-6 items-center justify-center rounded ${
-            signal.side === "long" ? "bg-green-500/20" : "bg-red-500/20"
-          }`}
-        >
-          {signal.side === "long" ? (
-            <ArrowUp className="h-4 w-4 text-green-500" />
+    <div className="rounded-xl border bg-card/70 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{moduleName(signal)}</Badge>
+            <Badge
+              variant={
+                closed
+                  ? signal.isWin
+                    ? "default"
+                    : "destructive"
+                  : signal.status === "executed"
+                    ? "default"
+                    : "secondary"
+              }
+            >
+              <Icon className="mr-1 size-3" />
+              {closed ? "closed" : signal.status}
+            </Badge>
+          </div>
+          <div className="mt-3 font-mono font-semibold text-xl">
+            {signal.symbol} <span className="text-muted-foreground text-xs">LONG</span>
+          </div>
+        </div>
+        <div className="text-right">
+          {closed ? (
+            <div
+              className={`font-mono text-2xl ${
+                Number(signal.realizedPnl ?? 0) >= 0
+                  ? "text-primary"
+                  : "text-destructive"
+              }`}
+            >
+              {Number(signal.realizedPnl ?? 0) >= 0 ? "+" : ""}
+              {Number(signal.realizedPnl ?? 0).toFixed(2)}%
+            </div>
           ) : (
-            <ArrowDown className="h-4 w-4 text-red-500" />
+            <>
+              <div className="font-mono text-2xl">
+                {Number(signal.strength ?? 0).toFixed(0)}
+              </div>
+              <div className="text-[9px] text-muted-foreground uppercase">
+                strength
+              </div>
+            </>
           )}
         </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-medium font-mono text-sm">
-              {signal.symbol}
-            </span>
-            <Badge
-              className="text-[10px]"
-              variant={signal.side === "long" ? "default" : "destructive"}
-            >
-              {signal.side.toUpperCase()}
-            </Badge>
-            <Badge className="text-[10px]" variant="outline">
-              {signal.source}
-            </Badge>
-          </div>
-          <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">
-            {signal.metadata?.reasoning || "AI generated signal"}
-          </p>
-        </div>
       </div>
-      <div className="flex items-center gap-2">
-        {signal.strength && (
-          <div className="flex items-center gap-1">
-            <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full bg-primary"
-                style={{ width: `${signal.strength}%` }}
-              />
-            </div>
-            <span className="font-mono text-muted-foreground text-xs">
-              {signal.strength}%
-            </span>
-          </div>
-        )}
-        <span className="text-muted-foreground text-xs">
-          {new Date(signal.createdAt).toLocaleString("ru-RU", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </span>
-        {showActions && onApprove && onReject && (
-          <div className="flex gap-1">
-            <Button
-              className="h-7 w-7 p-0"
-              onClick={() => onApprove(signal)}
-              size="sm"
-              variant="outline"
-            >
-              <Check className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              className="h-7 w-7 p-0"
-              onClick={() => onReject(signal)}
-              size="sm"
-              variant="ghost"
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        )}
+
+      <p className="mt-3 text-muted-foreground text-xs leading-5">
+        {metadata.reasoning ?? signalPlan?.reason ?? "Deterministic strategy event"}
+      </p>
+
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Metric
+          icon={RadioTower}
+          label="Entry"
+          value={signal.entryPrice ?? String(position?.entryPrice ?? signalPlan?.entryPrice ?? "—")}
+        />
+        <Metric
+          icon={ArrowDownRight}
+          label="Stop"
+          value={position?.stopPrice ? String(position.stopPrice) : "—"}
+        />
+        <Metric
+          icon={Target}
+          label="Target"
+          value={position?.takeProfitPrice ? String(position.takeProfitPrice) : "—"}
+        />
+        <Metric
+          icon={ShieldCheck}
+          label="Risk"
+          value={position?.riskPercent !== undefined ? `${position.riskPercent}%` : "—"}
+        />
+      </div>
+
+      <div className="mt-4 flex flex-wrap justify-between gap-2 border-border/60 border-t pt-3 font-mono text-[10px] text-muted-foreground">
+        <div className="flex flex-wrap gap-4">
+          {position?.cappedNotional !== undefined ? (
+            <span>NOTIONAL {position.cappedNotional.toFixed(2)} USDT</span>
+          ) : null}
+          {position?.quantity !== undefined ? (
+            <span>QTY {position.quantity.toPrecision(6)}</span>
+          ) : null}
+          {signalPlan?.maxHoldMinutes ? (
+            <span>MAX HOLD {signalPlan.maxHoldMinutes}m</span>
+          ) : null}
+          {closed ? <span>{metadata.closeReason ?? "exchange_exit"}</span> : null}
+        </div>
+        <span>{new Date(signal.createdAt).toLocaleString("ru-RU")}</span>
       </div>
     </div>
   );
 }
 
-export default function SignalsPage() {
-  const [selectedSignal, setSelectedSignal] = useState<Signal | null>(null);
-  const [approveDialogOpen, setApproveDialogOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("pending");
+function Metric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg border bg-background/40 p-2.5">
+      <div className="flex items-center gap-1 text-[9px] text-muted-foreground uppercase">
+        <Icon className="size-3" /> {label}
+      </div>
+      <div className="mt-1 truncate font-mono text-xs">{value}</div>
+    </div>
+  );
+}
 
-  const { data: pendingSignals, isLoading: loadingPending } =
-    usePendingSignals();
-  const { data: allSignals, isLoading: loadingAll } = useSignals({ limit: 50 });
-  const { data: stats } = useSignalStats();
-  const { data: performanceStats, isLoading: loadingPerformance } =
-    usePerformanceStats();
-  const { data: closedSignals, isLoading: loadingClosed } = useClosedSignals({
-    limit: 20,
-  });
-  const rejectSignal = useRejectSignal();
+function Empty({ text }: { text: string }) {
+  return (
+    <div className="py-16 text-center">
+      <RadioTower className="mx-auto size-9 text-muted-foreground/40" />
+      <p className="mt-3 text-muted-foreground text-sm">{text}</p>
+    </div>
+  );
+}
 
-  const handleApprove = (signal: Signal) => {
-    setSelectedSignal(signal);
-    setApproveDialogOpen(true);
-  };
+export default function StrategySignalsPage() {
+  const signals = useSignals({ limit: 200 });
+  const closed = useClosedSignals({ limit: 200 });
+  const [tab, setTab] = useState("candidates");
+  const all = useMemo(
+    () => (signals.data ?? []).filter(isStrategySignal),
+    [signals.data]
+  );
+  const closedTrades = useMemo(
+    () => (closed.data ?? []).filter(isStrategySignal),
+    [closed.data]
+  );
+  const candidates = all.filter((item) => item.status === "pending");
+  const open = all.filter(
+    (item) => item.status === "executed" && !item.exitPrice
+  );
+  const rejected = all.filter(
+    (item) => item.status === "rejected" || item.status === "expired"
+  );
+  const wins = closedTrades.filter((item) => item.isWin).length;
+  const totalReturn = closedTrades.reduce(
+    (sum, item) => sum + Number(item.realizedPnl ?? 0),
+    0
+  );
 
-  const handleReject = async (signal: Signal) => {
-    if (confirm("Reject this signal?")) {
-      await rejectSignal.mutateAsync({ signalId: signal.id });
-    }
-  };
+  if (signals.isLoading || closed.isLoading) {
+    return (
+      <PageLayout title="Strategy Signals">
+        <PageLoading count={8} variant="cards" />
+      </PageLayout>
+    );
+  }
 
-  const executedSignals =
-    allSignals?.filter((s) => s.status === "executed") || [];
-  const rejectedSignals =
-    allSignals?.filter((s) => s.status === "rejected") || [];
+  const panel = (rows: Signal[], empty: string) =>
+    rows.length ? (
+      <div className="grid gap-3 p-3 xl:grid-cols-2">
+        {rows.map((item) => (
+          <TradeCard key={item.id} signal={item} />
+        ))}
+      </div>
+    ) : (
+      <Empty text={empty} />
+    );
 
   return (
     <PageLayout
-      subtitle="AI-generated signals from news analysis"
-      title="Trading Signals"
+      actions={
+        <div className="flex gap-2">
+          <Link href="/strategy-builder">
+            <Button size="sm" variant="outline">
+              Blueprint <ArrowRight className="ml-1 size-3.5" />
+            </Button>
+          </Link>
+          <Link href="/auto-trading">
+            <Button size="sm">
+              Execution <ArrowRight className="ml-1 size-3.5" />
+            </Button>
+          </Link>
+        </div>
+      }
+      subtitle="Только metadata.strategyKind = consensus_wif_dot_v1"
+      title="Strategy Signals"
     >
-      {/* Stats Row */}
-      <StatRow>
-        <StatItem label="Pending" value={stats?.pending || 0} />
-        <StatItem label="Executed" value={stats?.executed || 0} />
+      <StatRow className="md:grid-cols-5">
+        <StatItem label="Candidates" value={candidates.length} />
+        <StatItem label="Open" value={open.length} />
+        <StatItem label="Closed" value={closedTrades.length} />
         <StatItem
-          label="Win Rate"
-          value={
-            performanceStats?.winRate !== undefined
-              ? `${(performanceStats.winRate * 100).toFixed(0)}%`
-              : "—"
-          }
+          label="Win rate"
+          value={closedTrades.length ? `${((wins / closedTrades.length) * 100).toFixed(1)}%` : "—"}
         />
         <StatItem
-          label="Total Return"
-          value={
-            performanceStats?.totalReturn !== undefined
-              ? `${performanceStats.totalReturn >= 0 ? "+" : ""}${performanceStats.totalReturn.toFixed(1)}%`
-              : "—"
-          }
+          label="Net return"
+          value={closedTrades.length ? `${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%` : "—"}
         />
-        <StatItem label="Total" value={stats?.total || 0} />
       </StatRow>
 
-      {/* Signals Tabs */}
-      <div className="mt-4">
-        <Tabs onValueChange={setActiveTab} value={activeTab}>
-          <TabsList>
-            <TabsTrigger value="pending">
-              Pending ({pendingSignals?.length || 0})
-            </TabsTrigger>
-            <TabsTrigger value="executed">
-              Executed ({executedSignals.length})
-            </TabsTrigger>
-            <TabsTrigger value="performance">Performance</TabsTrigger>
-            <TabsTrigger value="rejected">
-              Rejected ({rejectedSignals.length})
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent className="mt-4" value="pending">
-            <TerminalPanel
-              subtitle={`${pendingSignals?.length || 0} signals`}
-              title="Pending Signals"
-            >
-              {loadingPending ? (
-                <div className="flex items-center justify-center py-8">
-                  <RefreshCw className="h-5 w-5 animate-spin" />
-                </div>
-              ) : pendingSignals?.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-                  <Activity className="mb-2 h-8 w-8 opacity-50" />
-                  <p className="text-sm">No pending signals</p>
-                  <p className="text-xs">
-                    New signals will appear when generated from news analysis
-                  </p>
-                </div>
-              ) : (
-                <div>
-                  {pendingSignals?.map((signal) => (
-                    <SignalRow
-                      key={signal.id}
-                      onApprove={handleApprove}
-                      onReject={handleReject}
-                      showActions
-                      signal={signal}
-                    />
-                  ))}
-                </div>
-              )}
-            </TerminalPanel>
-          </TabsContent>
-
-          <TabsContent className="mt-4" value="executed">
-            <TerminalPanel
-              subtitle={`${executedSignals.length} signals`}
-              title="Executed Signals"
-            >
-              {executedSignals.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-                  <Activity className="mb-2 h-8 w-8 opacity-50" />
-                  <p className="text-sm">No executed signals yet</p>
-                </div>
-              ) : (
-                <div>
-                  {executedSignals.map((signal) => (
-                    <SignalRow key={signal.id} signal={signal} />
-                  ))}
-                </div>
-              )}
-            </TerminalPanel>
-          </TabsContent>
-
-          <TabsContent className="mt-4" value="performance">
-            <PerformanceStatsCard
-              isLoading={loadingPerformance}
-              stats={performanceStats}
-            />
-            {closedSignals && closedSignals.length > 0 && (
-              <div className="mt-4">
-                <TerminalPanel
-                  subtitle={`${closedSignals.length} trades`}
-                  title="Closed Trades"
-                >
-                  <div>
-                    {closedSignals.map((signal) => (
-                      <div
-                        className="flex items-center justify-between border-border/50 border-b px-3 py-2 last:border-0 hover:bg-muted/30"
-                        key={signal.id}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`flex h-6 w-6 items-center justify-center rounded ${
-                              signal.isWin ? "bg-green-500/20" : "bg-red-500/20"
-                            }`}
-                          >
-                            {signal.isWin ? (
-                              <ArrowUp className="h-4 w-4 text-green-500" />
-                            ) : (
-                              <ArrowDown className="h-4 w-4 text-red-500" />
-                            )}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium font-mono text-sm">
-                                {signal.symbol}
-                              </span>
-                              <Badge
-                                className="text-[10px]"
-                                variant={
-                                  signal.side === "long"
-                                    ? "default"
-                                    : "destructive"
-                                }
-                              >
-                                {signal.side.toUpperCase()}
-                              </Badge>
-                            </div>
-                            <p className="mt-0.5 text-muted-foreground text-xs">
-                              Entry: {signal.entryPrice} → Exit:{" "}
-                              {signal.exitPrice}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span
-                            className={`font-mono text-sm ${
-                              signal.isWin ? "text-green-500" : "text-red-500"
-                            }`}
-                          >
-                            {Number(signal.realizedPnl) >= 0 ? "+" : ""}
-                            {Number(signal.realizedPnl).toFixed(2)}%
-                          </span>
-                          {signal.exitAt && (
-                            <span className="text-muted-foreground text-xs">
-                              {new Date(signal.exitAt).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </TerminalPanel>
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent className="mt-4" value="rejected">
-            <TerminalPanel
-              subtitle={`${rejectedSignals.length} signals`}
-              title="Rejected Signals"
-            >
-              {rejectedSignals.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-                  <Activity className="mb-2 h-8 w-8 opacity-50" />
-                  <p className="text-sm">No rejected signals</p>
-                </div>
-              ) : (
-                <div>
-                  {rejectedSignals.map((signal) => (
-                    <SignalRow key={signal.id} signal={signal} />
-                  ))}
-                </div>
-              )}
-            </TerminalPanel>
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      <SignalApproveDialog
-        onOpenChange={setApproveDialogOpen}
-        open={approveDialogOpen}
-        signal={selectedSignal}
-      />
+      <Tabs className="mt-4" onValueChange={setTab} value={tab}>
+        <TabsList>
+          <TabsTrigger value="candidates">Candidates ({candidates.length})</TabsTrigger>
+          <TabsTrigger value="open">Open ({open.length})</TabsTrigger>
+          <TabsTrigger value="closed">Closed ({closedTrades.length})</TabsTrigger>
+          <TabsTrigger value="rejected">Rejected ({rejected.length})</TabsTrigger>
+        </TabsList>
+        <TabsContent className="mt-4" value="candidates">
+          <TerminalPanel title="Pending candidates">
+            {panel(candidates, "Полный WIF/DOT сигнал не сформирован.")}
+          </TerminalPanel>
+        </TabsContent>
+        <TabsContent className="mt-4" value="open">
+          <TerminalPanel title="Open strategy positions">
+            {panel(open, "Открытых strategy positions нет.")}
+          </TerminalPanel>
+        </TabsContent>
+        <TabsContent className="mt-4" value="closed">
+          <TerminalPanel title="Closed trades">
+            {panel(closedTrades, "Закрытых strategy trades пока нет.")}
+          </TerminalPanel>
+        </TabsContent>
+        <TabsContent className="mt-4" value="rejected">
+          <TerminalPanel title="Rejected / expired">
+            {panel(rejected, "Отклонённых событий нет.")}
+          </TerminalPanel>
+        </TabsContent>
+      </Tabs>
     </PageLayout>
   );
 }

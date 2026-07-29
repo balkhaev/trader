@@ -11,7 +11,6 @@ import {
 import { user } from "./auth";
 import { exchangeAccount } from "./exchange";
 
-// Auto-trading configuration for users
 export const autoTradingConfig = pgTable(
   "auto_trading_config",
   {
@@ -22,41 +21,43 @@ export const autoTradingConfig = pgTable(
       .notNull()
       .unique()
       .references(() => user.id, { onDelete: "cascade" }),
-    // General settings
     enabled: boolean("enabled").default(false).notNull(),
     exchangeAccountId: text("exchange_account_id").references(
       () => exchangeAccount.id,
       { onDelete: "set null" }
     ),
-    // Signal filters
     minSignalStrength: numeric("min_signal_strength", {
       precision: 5,
       scale: 2,
-    }).default("75"),
-    allowedSources: jsonb("allowed_sources").$type<string[]>().default(["llm"]),
-    allowedSymbols: jsonb("allowed_symbols").$type<string[]>(),
-    blockedSymbols: jsonb("blocked_symbols").$type<string[]>(),
+    }).default("0"),
+    allowedSources: jsonb("allowed_sources")
+      .$type<readonly string[]>()
+      .default(["webhook"]),
+    allowedSymbols: jsonb("allowed_symbols")
+      .$type<readonly string[]>()
+      .default(["WIFUSDT", "DOTUSDT"]),
+    blockedSymbols: jsonb("blocked_symbols").$type<readonly string[]>(),
     allowLong: boolean("allow_long").default(true).notNull(),
-    allowShort: boolean("allow_short").default(true).notNull(),
-    // Position sizing
-    positionSizeType: text("position_size_type").default("fixed").notNull(), // 'fixed' | 'percent' | 'risk_based'
+    allowShort: boolean("allow_short").default(false).notNull(),
+    positionSizeType: text("position_size_type")
+      .default("risk_based")
+      .notNull(),
     positionSizeValue: numeric("position_size_value", {
       precision: 20,
       scale: 8,
-    }).default("100"), // USD for fixed, % for percent
+    }).default("1"),
     maxPositionSize: numeric("max_position_size", {
       precision: 20,
       scale: 8,
-    }).default("1000"),
-    // Risk management
+    }).default("0"),
     defaultStopLossPercent: numeric("default_stop_loss_percent", {
       precision: 5,
       scale: 2,
-    }).default("5"),
+    }).default("0"),
     defaultTakeProfitPercent: numeric("default_take_profit_percent", {
       precision: 5,
       scale: 2,
-    }).default("10"),
+    }).default("0"),
     maxDailyTrades: numeric("max_daily_trades", {
       precision: 5,
       scale: 0,
@@ -64,16 +65,14 @@ export const autoTradingConfig = pgTable(
     maxOpenPositions: numeric("max_open_positions", {
       precision: 5,
       scale: 0,
-    }).default("5"),
+    }).default("2"),
     maxDailyLossPercent: numeric("max_daily_loss_percent", {
       precision: 5,
       scale: 2,
-    }).default("5"),
-    // Execution
-    orderType: text("order_type").default("market").notNull(), // 'market' | 'limit'
+    }).default("15"),
+    orderType: text("order_type").default("market").notNull(),
     useStopLoss: boolean("use_stop_loss").default(true).notNull(),
     useTakeProfit: boolean("use_take_profit").default(true).notNull(),
-    // Timestamps
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -83,7 +82,6 @@ export const autoTradingConfig = pgTable(
   (table) => [index("auto_trading_config_user_idx").on(table.userId)]
 );
 
-// Auto-trading execution log
 export const autoTradingLog = pgTable(
   "auto_trading_log",
   {
@@ -94,7 +92,7 @@ export const autoTradingLog = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     signalId: text("signal_id"),
-    action: text("action").notNull(), // 'executed' | 'skipped' | 'error'
+    action: text("action").notNull(),
     reason: text("reason"),
     details: jsonb("details").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -105,7 +103,6 @@ export const autoTradingLog = pgTable(
   ]
 );
 
-// Relations
 export const autoTradingConfigRelations = relations(
   autoTradingConfig,
   ({ one }) => ({

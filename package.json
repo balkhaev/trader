@@ -21,6 +21,7 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "check-types": "turbo check-types",
+    "test:strategy": "bun test apps/server/src/services/strategy/consensus-wif-dot.service.test.ts",
     "dev:native": "turbo -F native dev",
     "dev:web": "turbo -F web dev",
     "dev:server": "turbo -F server dev",

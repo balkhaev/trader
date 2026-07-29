@@ -1,6 +1,6 @@
 "use client";
 
-import { PlusIcon } from "lucide-react";
+import { PlusIcon, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,149 +15,128 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useAddExchangeAccount } from "@/hooks/use-exchange";
 
 export function AddAccountDialog() {
   const [open, setOpen] = useState(false);
-  const [exchange, setExchange] = useState<"bybit" | "binance" | "tinkoff">(
-    "bybit"
-  );
-  const [name, setName] = useState("");
+  const [name, setName] = useState("Binance USD-M Testnet");
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
-  const [testnet, setTestnet] = useState(false);
-
+  const [testnet, setTestnet] = useState(true);
   const addAccount = useAddExchangeAccount();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      await addAccount.mutateAsync({
-        exchange,
-        name,
-        apiKey,
-        apiSecret,
-        testnet,
-      });
-
-      setOpen(false);
-      resetForm();
-    } catch (error) {
-      // Error handled by mutation
-    }
-  };
-
-  const resetForm = () => {
-    setExchange("bybit");
-    setName("");
+  const reset = () => {
+    setName("Binance USD-M Testnet");
     setApiKey("");
     setApiSecret("");
-    setTestnet(false);
+    setTestnet(true);
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await addAccount.mutateAsync({
+      exchange: "binance",
+      name,
+      apiKey,
+      apiSecret,
+      testnet,
+    });
+    setOpen(false);
+    reset();
   };
 
   return (
-    <Dialog onOpenChange={setOpen} open={open}>
-      <DialogTrigger render={<Button />}>
-        <PlusIcon className="mr-2 h-4 w-4" />
-        Add Exchange
+    <Dialog
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+      open={open}
+    >
+      <DialogTrigger render={<Button size="sm" />}>
+        <PlusIcon className="mr-1 size-4" /> Подключить Binance
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
-        <form onSubmit={handleSubmit}>
+      <DialogContent className="sm:max-w-[460px]">
+        <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>Add Exchange Account</DialogTitle>
+            <DialogTitle>Binance USD-M Futures</DialogTitle>
             <DialogDescription>
-              Connect your exchange account using API keys. We encrypt all keys
-              before storing.
+              Терминал поддерживает только Binance USD-M. Ключи шифруются перед
+              сохранением; вывод средств API-ключу не требуется.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="exchange">Exchange</Label>
-              <Select
-                onValueChange={(v) => setExchange(v as typeof exchange)}
-                value={exchange}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select exchange" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bybit">Bybit</SelectItem>
-                  <SelectItem disabled value="binance">
-                    Binance (Coming soon)
-                  </SelectItem>
-                  <SelectItem disabled value="tinkoff">
-                    Tinkoff (Coming soon)
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+
+          <div className="my-4 rounded-xl border border-primary/25 bg-primary/5 p-3">
+            <div className="flex items-start gap-2">
+              <ShieldCheck className="mt-0.5 size-4 text-primary" />
+              <p className="text-muted-foreground text-xs leading-5">
+                По умолчанию используется testnet. Live account backend примет
+                только при явном ALLOW_LIVE_TRADING=true.
+              </p>
             </div>
+          </div>
+
+          <div className="grid gap-4 py-2">
             <div className="grid gap-2">
-              <Label htmlFor="name">Account Name</Label>
+              <Label htmlFor="account-name">Название</Label>
               <Input
-                id="name"
-                onChange={(e) => setName(e.target.value)}
-                placeholder="My Trading Account"
+                id="account-name"
+                maxLength={80}
+                onChange={(event) => setName(event.target.value)}
                 required
                 value={name}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="apiKey">API Key</Label>
+              <Label htmlFor="api-key">API key</Label>
               <Input
-                id="apiKey"
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Enter your API key"
+                autoComplete="off"
+                id="api-key"
+                onChange={(event) => setApiKey(event.target.value)}
                 required
                 value={apiKey}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="apiSecret">API Secret</Label>
+              <Label htmlFor="api-secret">API secret</Label>
               <Input
-                id="apiSecret"
-                onChange={(e) => setApiSecret(e.target.value)}
-                placeholder="Enter your API secret"
+                autoComplete="new-password"
+                id="api-secret"
+                onChange={(event) => setApiSecret(event.target.value)}
                 required
                 type="password"
                 value={apiSecret}
               />
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-start gap-2 rounded-lg border p-3">
               <Checkbox
                 checked={testnet}
                 id="testnet"
                 onCheckedChange={(checked) => setTestnet(checked === true)}
               />
-              <Label className="font-normal text-sm" htmlFor="testnet">
-                Use Testnet (for testing with fake funds)
-              </Label>
+              <div>
+                <Label htmlFor="testnet">Binance Futures Testnet</Label>
+                <p className="mt-1 text-muted-foreground text-xs">
+                  Обязательно для первой forward-проверки.
+                </p>
+              </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button
-              onClick={() => setOpen(false)}
-              type="button"
-              variant="outline"
-            >
-              Cancel
-            </Button>
-            <Button disabled={addAccount.isPending} type="submit">
-              {addAccount.isPending ? "Connecting..." : "Connect"}
-            </Button>
-          </DialogFooter>
-          {addAccount.isError && (
-            <p className="mt-2 text-red-500 text-sm">
+
+          {addAccount.isError ? (
+            <p className="mt-2 text-destructive text-sm">
               {addAccount.error.message}
             </p>
-          )}
+          ) : null}
+
+          <DialogFooter className="mt-4">
+            <Button onClick={() => setOpen(false)} type="button" variant="outline">
+              Отмена
+            </Button>
+            <Button disabled={addAccount.isPending} type="submit">
+              {addAccount.isPending ? "Проверка preflight…" : "Подключить"}
+            </Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

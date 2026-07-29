@@ -1,0 +1,56 @@
+name: Consensus strategy checks
+
+on:
+  pull_request:
+    paths:
+      - "apps/server/**"
+      - "apps/web/**"
+      - "packages/db/**"
+      - "apps/lean/Consensus WIF DOT Risk Accelerator/**"
+      - ".github/workflows/consensus-strategy.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NODE_ENV: "test"
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/trader"
+      BETTER_AUTH_SECRET: "consensus-ci-secret-consensus-ci-secret"
+      BETTER_AUTH_URL: "http://localhost:3000"
+      CORS_ORIGIN: "http://localhost:3001"
+      ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      NEXT_PUBLIC_API_URL: "http://localhost:3000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.3
+      - run: bun install --frozen-lockfile
+      - name: Deterministic strategy and Binance tests
+        run: |
+          bun test apps/server/src/services/strategy/consensus-wif-dot.service.test.ts
+          bun test apps/server/src/services/exchange/binance.test.ts
+      - name: LEAN syntax check
+        run: python -m py_compile "apps/lean/Consensus WIF DOT Risk Accelerator/main.py"
+      - name: Full active TypeScript checks
+        run: |
+          bunx tsc -p apps/server/tsconfig.json --noEmit
+          bunx tsc -p apps/web/tsconfig.json --noEmit
+          bunx tsc -p packages/db/tsconfig.json --noEmit
+      - name: Production frontend build
+        run: bun --cwd apps/web run build
+      - name: Strategy-only runtime invariants
+        shell: bash
+        run: |
+          grep -q 'strategyScheduler.start' apps/server/src/index.ts
+          grep -q 'ALLOW_LIVE_TRADING' apps/server/src/services/auto-trading/auto-trading.service.ts
+          grep -q 'One-way Mode' apps/server/src/services/exchange/binance.ts
+          grep -q 'validation/start' apps/server/src/routes/strategy.ts
+          ! grep -q '/:id/approve' apps/server/src/routes/signals.ts
+          ! grep -q 'polymarket' apps/server/src/index.ts
+          ! grep -q 'newsScheduler' apps/server/src/index.ts
+          ! grep -q '"/accounts/:id/orders"' apps/server/src/routes/exchange.ts
+          ! grep -q 'type: z.enum' apps/server/src/routes/exchange.ts
+          git diff --check

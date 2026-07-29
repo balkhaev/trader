@@ -1,6 +1,6 @@
 import { zValidator } from "@hono/zod-validator";
 import { auth } from "@trader/auth";
-import { db, exchangeAccount } from "@trader/db";
+import { autoTradingConfig, db, exchangeAccount } from "@trader/db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -8,86 +8,109 @@ import { decrypt, encrypt } from "../services/crypto.service";
 import { createExchangeService } from "../services/exchange";
 
 const exchange = new Hono();
+const STRATEGY_SYMBOLS = new Set(["WIFUSDT", "DOTUSDT"]);
 
-// Middleware для получения пользователя
 async function getUser(c: { req: { raw: Request } }) {
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   return session?.user;
 }
 
-// GET /api/exchange/accounts - список аккаунтов
+async function ownedBinanceAccount(userId: string, id: string) {
+  const [account] = await db
+    .select()
+    .from(exchangeAccount)
+    .where(
+      and(
+        eq(exchangeAccount.id, id),
+        eq(exchangeAccount.userId, userId),
+        eq(exchangeAccount.exchange, "binance")
+      )
+    );
+  return account ?? null;
+}
+
+function serviceFor(account: NonNullable<Awaited<ReturnType<typeof ownedBinanceAccount>>>) {
+  return createExchangeService("binance", {
+    apiKey: decrypt(account.apiKey),
+    apiSecret: decrypt(account.apiSecret),
+    testnet: account.testnet,
+  });
+}
+
 exchange.get("/accounts", async (c) => {
   const user = await getUser(c);
-  if (!user) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-
-  const accounts = await db
-    .select({
-      id: exchangeAccount.id,
-      exchange: exchangeAccount.exchange,
-      name: exchangeAccount.name,
-      testnet: exchangeAccount.testnet,
-      enabled: exchangeAccount.enabled,
-      createdAt: exchangeAccount.createdAt,
-    })
-    .from(exchangeAccount)
-    .where(eq(exchangeAccount.userId, user.id));
-
-  return c.json(accounts);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  return c.json(
+    await db
+      .select({
+        id: exchangeAccount.id,
+        exchange: exchangeAccount.exchange,
+        name: exchangeAccount.name,
+        testnet: exchangeAccount.testnet,
+        enabled: exchangeAccount.enabled,
+        createdAt: exchangeAccount.createdAt,
+      })
+      .from(exchangeAccount)
+      .where(
+        and(
+          eq(exchangeAccount.userId, user.id),
+          eq(exchangeAccount.exchange, "binance")
+        )
+      )
+  );
 });
 
-// POST /api/exchange/accounts - добавить аккаунт
 exchange.post(
   "/accounts",
   zValidator(
     "json",
     z.object({
-      exchange: z.enum(["bybit", "binance", "tinkoff"]),
-      name: z.string().min(1),
-      apiKey: z.string().min(1),
-      apiSecret: z.string().min(1),
-      testnet: z.boolean().default(false),
+      exchange: z.literal("binance"),
+      name: z.string().trim().min(1).max(80),
+      apiKey: z.string().trim().min(1),
+      apiSecret: z.string().trim().min(1),
+      testnet: z.boolean().default(true),
     })
   ),
   async (c) => {
     const user = await getUser(c);
-    if (!user) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
     const data = c.req.valid("json");
-
-    // Проверяем валидность ключей, пытаясь получить баланс
+    if (!data.testnet && process.env.ALLOW_LIVE_TRADING !== "true") {
+      return c.json(
+        { error: "Live Binance accounts are locked; use testnet first" },
+        400
+      );
+    }
     try {
-      const service = createExchangeService(data.exchange, {
-        apiKey: data.apiKey,
-        apiSecret: data.apiSecret,
-        testnet: data.testnet,
-      });
-      await service.getAccountInfo();
+      const service = createExchangeService("binance", data);
+      const preflight = await service.getPreflight?.();
+      if (!preflight?.canTrade || !preflight.oneWayMode) {
+        return c.json(
+          {
+            error: "Binance futures preflight failed",
+            details: preflight?.messages.join("; ") ?? "Unknown preflight error",
+          },
+          400
+        );
+      }
     } catch (error) {
       return c.json(
         {
-          error: "Invalid API credentials",
+          error: "Invalid Binance USD-M credentials",
           details: error instanceof Error ? error.message : "Unknown error",
         },
         400
       );
     }
-
-    // Шифруем ключи
-    const encryptedApiKey = encrypt(data.apiKey);
-    const encryptedApiSecret = encrypt(data.apiSecret);
-
     const [account] = await db
       .insert(exchangeAccount)
       .values({
         userId: user.id,
-        exchange: data.exchange,
+        exchange: "binance",
         name: data.name,
-        apiKey: encryptedApiKey,
-        apiSecret: encryptedApiSecret,
+        apiKey: encrypt(data.apiKey),
+        apiSecret: encrypt(data.apiSecret),
         testnet: data.testnet,
       })
       .returning({
@@ -98,377 +121,138 @@ exchange.post(
         enabled: exchangeAccount.enabled,
         createdAt: exchangeAccount.createdAt,
       });
-
     return c.json(account, 201);
   }
 );
 
-// DELETE /api/exchange/accounts/:id - удалить аккаунт
 exchange.delete("/accounts/:id", async (c) => {
   const user = await getUser(c);
-  if (!user) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
   const id = c.req.param("id");
-
-  const result = await db
-    .delete(exchangeAccount)
-    .where(and(eq(exchangeAccount.id, id), eq(exchangeAccount.userId, user.id)))
-    .returning({ id: exchangeAccount.id });
-
-  if (result.length === 0) {
-    return c.json({ error: "Account not found" }, 404);
+  const [inUse] = await db
+    .select({ enabled: autoTradingConfig.enabled })
+    .from(autoTradingConfig)
+    .where(
+      and(
+        eq(autoTradingConfig.userId, user.id),
+        eq(autoTradingConfig.exchangeAccountId, id)
+      )
+    );
+  if (inUse?.enabled) {
+    return c.json({ error: "Disable execution before deleting this account" }, 400);
   }
-
-  return c.json({ success: true });
+  const deleted = await db
+    .delete(exchangeAccount)
+    .where(
+      and(
+        eq(exchangeAccount.id, id),
+        eq(exchangeAccount.userId, user.id),
+        eq(exchangeAccount.exchange, "binance")
+      )
+    )
+    .returning({ id: exchangeAccount.id });
+  return deleted.length
+    ? c.json({ success: true })
+    : c.json({ error: "Binance account not found" }, 404);
 });
 
-// GET /api/exchange/accounts/:id/balance - баланс аккаунта
 exchange.get("/accounts/:id/balance", async (c) => {
   const user = await getUser(c);
-  if (!user) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-
-  const id = c.req.param("id");
-
-  const [account] = await db
-    .select()
-    .from(exchangeAccount)
-    .where(
-      and(eq(exchangeAccount.id, id), eq(exchangeAccount.userId, user.id))
-    );
-
-  if (!account) {
-    return c.json({ error: "Account not found" }, 404);
-  }
-
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const account = await ownedBinanceAccount(user.id, c.req.param("id"));
+  if (!account) return c.json({ error: "Binance account not found" }, 404);
   try {
-    const service = createExchangeService(account.exchange, {
-      apiKey: decrypt(account.apiKey),
-      apiSecret: decrypt(account.apiSecret),
-      testnet: account.testnet,
-    });
-
-    const [accountInfo, balances] = await Promise.all([
+    const service = serviceFor(account);
+    const [accountInfo, balances, preflight] = await Promise.all([
       service.getAccountInfo(),
       service.getBalances(),
+      service.getPreflight?.(),
     ]);
-
-    return c.json({ accountInfo, balances });
+    return c.json({ accountInfo, balances, preflight });
   } catch (error) {
     return c.json(
-      {
-        error: "Failed to fetch balance",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      500
+      { error: error instanceof Error ? error.message : "Balance request failed" },
+      400
     );
   }
 });
 
-// GET /api/exchange/accounts/:id/positions - позиции аккаунта
 exchange.get("/accounts/:id/positions", async (c) => {
   const user = await getUser(c);
-  if (!user) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-
-  const id = c.req.param("id");
-
-  const [account] = await db
-    .select()
-    .from(exchangeAccount)
-    .where(
-      and(eq(exchangeAccount.id, id), eq(exchangeAccount.userId, user.id))
-    );
-
-  if (!account) {
-    return c.json({ error: "Account not found" }, 404);
-  }
-
-  try {
-    const service = createExchangeService(account.exchange, {
-      apiKey: decrypt(account.apiKey),
-      apiSecret: decrypt(account.apiSecret),
-      testnet: account.testnet,
-    });
-
-    const positions = await service.getPositions();
-    return c.json(positions);
-  } catch (error) {
-    return c.json(
-      {
-        error: "Failed to fetch positions",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      500
-    );
-  }
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const account = await ownedBinanceAccount(user.id, c.req.param("id"));
+  if (!account) return c.json({ error: "Binance account not found" }, 404);
+  return c.json(await serviceFor(account).getPositions());
 });
 
-// GET /api/exchange/accounts/:id/orders - открытые ордера
 exchange.get("/accounts/:id/orders", async (c) => {
   const user = await getUser(c);
-  if (!user) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-
-  const id = c.req.param("id");
-
-  const [account] = await db
-    .select()
-    .from(exchangeAccount)
-    .where(
-      and(eq(exchangeAccount.id, id), eq(exchangeAccount.userId, user.id))
-    );
-
-  if (!account) {
-    return c.json({ error: "Account not found" }, 404);
-  }
-
-  try {
-    const service = createExchangeService(account.exchange, {
-      apiKey: decrypt(account.apiKey),
-      apiSecret: decrypt(account.apiSecret),
-      testnet: account.testnet,
-    });
-
-    const orders = await service.getOpenOrders();
-    return c.json(orders);
-  } catch (error) {
-    return c.json(
-      {
-        error: "Failed to fetch orders",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      500
-    );
-  }
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const account = await ownedBinanceAccount(user.id, c.req.param("id"));
+  if (!account) return c.json({ error: "Binance account not found" }, 404);
+  return c.json(await serviceFor(account).getOpenOrders());
 });
 
-// POST /api/exchange/accounts/:id/orders - создать ордер
-exchange.post(
-  "/accounts/:id/orders",
-  zValidator(
-    "json",
-    z.object({
-      symbol: z.string(),
-      side: z.enum(["buy", "sell"]),
-      type: z.enum(["market", "limit"]),
-      quantity: z.string(),
-      price: z.string().optional(),
-      stopLoss: z.string().optional(),
-      takeProfit: z.string().optional(),
-    })
-  ),
-  async (c) => {
-    const user = await getUser(c);
-    if (!user) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    const id = c.req.param("id");
-    const orderParams = c.req.valid("json");
-
-    const [account] = await db
-      .select()
-      .from(exchangeAccount)
-      .where(
-        and(eq(exchangeAccount.id, id), eq(exchangeAccount.userId, user.id))
-      );
-
-    if (!account) {
-      return c.json({ error: "Account not found" }, 404);
-    }
-
-    if (!account.enabled) {
-      return c.json({ error: "Account is disabled" }, 400);
-    }
-
-    try {
-      const service = createExchangeService(account.exchange, {
-        apiKey: decrypt(account.apiKey),
-        apiSecret: decrypt(account.apiSecret),
-        testnet: account.testnet,
-      });
-
-      const order = await service.createOrder(orderParams);
-      return c.json(order, 201);
-    } catch (error) {
-      return c.json(
-        {
-          error: "Failed to create order",
-          details: error instanceof Error ? error.message : "Unknown error",
-        },
-        500
-      );
-    }
-  }
-);
-
-// DELETE /api/exchange/accounts/:id/orders/:orderId - отменить ордер
-exchange.delete(
-  "/accounts/:id/orders/:orderId",
-  zValidator(
-    "json",
-    z.object({
-      symbol: z.string(),
-    })
-  ),
-  async (c) => {
-    const user = await getUser(c);
-    if (!user) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    const id = c.req.param("id");
-    const orderId = c.req.param("orderId");
-    const { symbol } = c.req.valid("json");
-
-    const [account] = await db
-      .select()
-      .from(exchangeAccount)
-      .where(
-        and(eq(exchangeAccount.id, id), eq(exchangeAccount.userId, user.id))
-      );
-
-    if (!account) {
-      return c.json({ error: "Account not found" }, 404);
-    }
-
-    try {
-      const service = createExchangeService(account.exchange, {
-        apiKey: decrypt(account.apiKey),
-        apiSecret: decrypt(account.apiSecret),
-        testnet: account.testnet,
-      });
-
-      await service.cancelOrder(orderId, symbol);
-      return c.json({ success: true });
-    } catch (error) {
-      return c.json(
-        {
-          error: "Failed to cancel order",
-          details: error instanceof Error ? error.message : "Unknown error",
-        },
-        500
-      );
-    }
-  }
-);
-
-// POST /api/exchange/accounts/:id/positions/:symbol/close - закрыть позицию
 exchange.post(
   "/accounts/:id/positions/:symbol/close",
-  zValidator(
-    "json",
-    z.object({
-      quantity: z.string().optional(), // Если не указано - закрыть полностью
-      type: z.enum(["market", "limit"]).default("market"),
-      price: z.string().optional(), // Только для limit
-    })
-  ),
+  zValidator("json", z.object({}).default({})),
   async (c) => {
     const user = await getUser(c);
-    if (!user) {
-      return c.json({ error: "Unauthorized" }, 401);
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const symbol = c.req.param("symbol").toUpperCase();
+    if (!STRATEGY_SYMBOLS.has(symbol)) {
+      return c.json({ error: "Only WIFUSDT and DOTUSDT may be closed here" }, 400);
     }
-
-    const id = c.req.param("id");
-    const symbol = c.req.param("symbol");
-    const { quantity, type, price } = c.req.valid("json");
-
-    const [account] = await db
-      .select()
-      .from(exchangeAccount)
-      .where(
-        and(eq(exchangeAccount.id, id), eq(exchangeAccount.userId, user.id))
-      );
-
-    if (!account) {
-      return c.json({ error: "Account not found" }, 404);
+    const [execution] = await db
+      .select({ enabled: autoTradingConfig.enabled })
+      .from(autoTradingConfig)
+      .where(eq(autoTradingConfig.userId, user.id));
+    if (execution?.enabled) {
+      return c.json({ error: "Use Emergency Stop while execution is enabled" }, 400);
     }
-
-    if (!account.enabled) {
-      return c.json({ error: "Account is disabled" }, 400);
-    }
-
-    try {
-      const service = createExchangeService(account.exchange, {
-        apiKey: decrypt(account.apiKey),
-        apiSecret: decrypt(account.apiSecret),
-        testnet: account.testnet,
-      });
-
-      // Получаем текущую позицию
-      const positions = await service.getPositions();
-      const position = positions.find((p) => p.symbol === symbol);
-
-      if (!position) {
-        return c.json({ error: "Position not found" }, 404);
-      }
-
-      // Закрываем позицию противоположным ордером
-      const closeQty = quantity || position.quantity;
-      const closeSide = position.side === "long" ? "sell" : "buy";
-
-      const order = await service.createOrder({
-        symbol,
-        side: closeSide,
-        type,
-        quantity: closeQty,
-        price: type === "limit" ? price : undefined,
-      });
-
-      return c.json(order, 201);
-    } catch (error) {
-      return c.json(
-        {
-          error: "Failed to close position",
-          details: error instanceof Error ? error.message : "Unknown error",
-        },
-        500
-      );
-    }
+    const account = await ownedBinanceAccount(user.id, c.req.param("id"));
+    if (!account?.enabled) return c.json({ error: "Binance account unavailable" }, 404);
+    const service = serviceFor(account);
+    const position = (await service.getPositions()).find(
+      (item) => item.symbol === symbol
+    );
+    if (!position) return c.json({ error: "Position not found" }, 404);
+    const order = await service.createOrder({
+      symbol,
+      side: position.side === "long" ? "sell" : "buy",
+      type: "market",
+      quantity: position.quantity,
+      reduceOnly: true,
+    });
+    await service.cancelAllOrders?.(symbol).catch(() => undefined);
+    return c.json(order, 201);
   }
 );
 
-// GET /api/exchange/overview - агрегированный обзор всех аккаунтов
 exchange.get("/overview", async (c) => {
   const user = await getUser(c);
-  if (!user) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
   const accounts = await db
     .select()
     .from(exchangeAccount)
     .where(
       and(
         eq(exchangeAccount.userId, user.id),
+        eq(exchangeAccount.exchange, "binance"),
         eq(exchangeAccount.enabled, true)
       )
     );
-
-  const results = await Promise.allSettled(
+  const settled = await Promise.allSettled(
     accounts.map(async (account) => {
-      const service = createExchangeService(account.exchange, {
-        apiKey: decrypt(account.apiKey),
-        apiSecret: decrypt(account.apiSecret),
-        testnet: account.testnet,
-      });
-
+      const service = serviceFor(account);
       const [accountInfo, positions] = await Promise.all([
         service.getAccountInfo(),
         service.getPositions(),
       ]);
-
       return {
         accountId: account.id,
         accountName: account.name,
-        exchange: account.exchange,
+        exchange: "binance" as const,
         testnet: account.testnet,
         ...accountInfo,
         positionsCount: positions.length,
@@ -476,55 +260,24 @@ exchange.get("/overview", async (c) => {
       };
     })
   );
-
-  const overview = results
-    .filter((r) => r.status === "fulfilled")
-    .map(
-      (r) =>
-        (
-          r as PromiseFulfilledResult<{
-            accountId: string;
-            accountName: string;
-            exchange: string;
-            testnet: boolean;
-            totalBalance: string;
-            availableBalance: string;
-            unrealizedPnl: string;
-            marginUsed?: string;
-            positionsCount: number;
-            positions: Array<{
-              symbol: string;
-              side: "long" | "short";
-              quantity: string;
-              entryPrice: string;
-              currentPrice: string;
-              unrealizedPnl: string;
-              leverage?: number;
-              liquidationPrice?: string;
-            }>;
-          }>
-        ).value
-    );
-
+  const overview = settled.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : []
+  );
   const totalBalance = overview.reduce(
-    (sum, acc) => sum + Number.parseFloat(acc.totalBalance || "0"),
+    (sum, account) => sum + Number(account.totalBalance || 0),
     0
   );
-
   const totalUnrealizedPnl = overview.reduce(
-    (sum, acc) => sum + Number.parseFloat(acc.unrealizedPnl || "0"),
+    (sum, account) => sum + Number(account.unrealizedPnl || 0),
     0
   );
-
-  const totalPositions = overview.reduce(
-    (sum, acc) => sum + acc.positionsCount,
-    0
-  );
-
   return c.json({
-    totalBalance: totalBalance.toString(),
-    totalUnrealizedPnl: totalUnrealizedPnl.toString(),
-    totalPositions,
+    totalBalance: String(totalBalance),
+    totalUnrealizedPnl: String(totalUnrealizedPnl),
+    totalPositions: overview.reduce(
+      (sum, account) => sum + account.positionsCount,
+      0
+    ),
     accountsCount: overview.length,
     accounts: overview,
   });
