@@ -103,7 +103,7 @@ bun test apps/server/src/services/exchange/binance.test.ts
 bunx tsc -p apps/server/tsconfig.json --noEmit
 bunx tsc -p apps/web/tsconfig.json --noEmit
 bunx tsc -p packages/db/tsconfig.json --noEmit
-bun --cwd apps/web run build
+bun run --cwd apps/web build
 ```
 
 ## Structure

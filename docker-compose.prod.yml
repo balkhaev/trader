@@ -33,7 +33,7 @@ services:
     command:
       - sh
       - -lc
-      - bun --cwd packages/db run db:push && exec bun --cwd apps/server run start
+      - bun run --cwd packages/db db:push && exec bun run --cwd apps/server start
     depends_on:
       postgres:
         condition: service_healthy

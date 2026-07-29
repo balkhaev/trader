@@ -7,7 +7,7 @@ RUN bun install --frozen-lockfile
 
 FROM base AS server-build
 ENV NODE_ENV=production
-RUN bun --cwd apps/server run build
+RUN bun run --cwd apps/server build
 
 FROM oven/bun:1.3.3-slim AS server
 WORKDIR /app
@@ -18,12 +18,12 @@ COPY --from=server-build /app/apps/server ./apps/server
 COPY --from=server-build /app/packages ./packages
 COPY --from=server-build /app/node_modules ./node_modules
 EXPOSE 3000
-CMD ["bun", "--cwd", "apps/server", "run", "start"]
+CMD ["bun", "run", "--cwd", "apps/server", "start"]
 
 FROM base AS web-build
 ENV NODE_ENV=production \
     API_INTERNAL_URL=http://server:3000
-RUN bun --cwd apps/web run build
+RUN bun run --cwd apps/web build
 
 FROM oven/bun:1.3.3-slim AS web
 WORKDIR /app
@@ -36,4 +36,4 @@ COPY --from=web-build /app/apps/web ./apps/web
 COPY --from=web-build /app/packages ./packages
 COPY --from=web-build /app/node_modules ./node_modules
 EXPOSE 3001
-CMD ["bun", "--cwd", "apps/web", "run", "start"]
+CMD ["bun", "run", "--cwd", "apps/web", "start"]
