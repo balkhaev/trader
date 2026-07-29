@@ -216,7 +216,14 @@ export default function PortfolioPage() {
                 <Slider
                   max={730}
                   min={30}
-                  onValueChange={(v) => setLookbackDays(v[0])}
+                  onValueChange={(value) => {
+                    const nextLookbackDays =
+                      typeof value === "number" ? value : value[0];
+
+                    if (nextLookbackDays !== undefined) {
+                      setLookbackDays(nextLookbackDays);
+                    }
+                  }}
                   step={30}
                   value={[lookbackDays]}
                 />

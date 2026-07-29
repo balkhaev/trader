@@ -80,6 +80,12 @@ DNS for `DOMAIN` must point to the production host and ports 80/443 must be reac
 
 The server applies the Drizzle schema before startup. PostgreSQL, Caddy data and certificates use persistent Docker volumes.
 
+### Coolify deployment
+
+`docker-compose.coolify.yml` is the production stack for the managed Coolify host. It omits Caddy because Coolify's Traefik proxy owns ports 80/443 and TLS. The stack keeps PostgreSQL private, persists its data, generates application secrets through Coolify magic variables, and leaves `ALLOW_LIVE_TRADING=false`.
+
+The default images are pinned to the immutable SHA that passed the production pipeline. Update `SERVER_IMAGE` and `WEB_IMAGE` together for an explicit rollout, then deploy the same Compose resource.
+
 ### Safe rollout order
 
 1. Keep `ALLOW_LIVE_TRADING=false`.
