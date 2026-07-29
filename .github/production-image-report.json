@@ -1,9 +1,0 @@
-{
-  "completed": true,
-  "sourceSha": "6d9f368d5aa33e74a98c20db3b4e29ceaf9b975d",
-  "verify": "success",
-  "build": "success",
-  "serverImage": "ghcr.io/balkhaev/trader-server:sha-6d9f368d5aa33e74a98c20db3b4e29ceaf9b975d",
-  "webImage": "ghcr.io/balkhaev/trader-web:sha-6d9f368d5aa33e74a98c20db3b4e29ceaf9b975d",
-  "reportedAt": "2026-07-29T09:38:32Z"
-}

@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   packages: write
 
 concurrency:
@@ -90,7 +90,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
-  report:
+  result:
     if: ${{ always() }}
     needs: [verify, build]
     runs-on: ubuntu-latest
@@ -98,33 +98,15 @@ jobs:
       VERIFY_RESULT: ${{ needs.verify.result }}
       BUILD_RESULT: ${{ needs.build.result }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-      - name: Record production pipeline result
+      - name: Publish summary
         shell: bash
         run: |
-          set -euo pipefail
-          completed=false
-          if [[ "$VERIFY_RESULT" == "success" && "$BUILD_RESULT" == "success" ]]; then
-            completed=true
-          fi
-          cat > .github/production-image-report.json <<JSON
           {
-            "completed": ${completed},
-            "sourceSha": "${GITHUB_SHA}",
-            "verify": "${VERIFY_RESULT}",
-            "build": "${BUILD_RESULT}",
-            "serverImage": "ghcr.io/${GITHUB_REPOSITORY_OWNER}/trader-server:sha-${GITHUB_SHA}",
-            "webImage": "ghcr.io/${GITHUB_REPOSITORY_OWNER}/trader-web:sha-${GITHUB_SHA}",
-            "reportedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          JSON
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/production-image-report.json
-          git commit -m "Record production pipeline result"
-          git push origin HEAD:main
-          if [[ "$completed" != "true" ]]; then
-            exit 1
-          fi
+            echo "## Production pipeline"
+            echo
+            echo "- Verify: ${VERIFY_RESULT}"
+            echo "- Images: ${BUILD_RESULT}"
+            echo "- Server: ghcr.io/${GITHUB_REPOSITORY_OWNER}/trader-server:sha-${GITHUB_SHA}"
+            echo "- Web: ghcr.io/${GITHUB_REPOSITORY_OWNER}/trader-web:sha-${GITHUB_SHA}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [[ "$VERIFY_RESULT" == "success" && "$BUILD_RESULT" == "success" ]]
