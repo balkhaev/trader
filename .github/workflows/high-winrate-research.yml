@@ -1,0 +1,53 @@
+name: High-winrate USD-M research
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/high_winrate_search.py"
+      - ".github/workflows/high-winrate-research.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: high-winrate-research-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install research dependencies
+        run: python -m pip install --upgrade numpy pandas numba matplotlib
+      - name: Restore public market-data cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/binance_usdm_15m
+          key: binance-usdm-15m-2023-2026-v1
+      - name: Run chronological search
+        run: python research/high_winrate_search.py --out research_results --workers 8
+      - name: Publish summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f research_results/report.md ]]; then
+            cat research_results/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Research did not produce a report." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload reproducible research bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: high-winrate-usdm-research
+          path: research_results/
+          if-no-files-found: warn
+          retention-days: 30
